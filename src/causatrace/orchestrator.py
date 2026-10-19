@@ -8,6 +8,7 @@ from typing import Iterable, Sequence
 
 from .attribution import (
     Attributor,
+    FACTOR_SUPPORTED,
     INTERACTION_SUSPECTED,
 )
 from .compare import ExactComparator
@@ -163,18 +164,19 @@ class AnalysisOrchestrator:
                     tuple(event for run in treatment_runs for event in run.trace_events),
                     root,
                 )
-                probes.append(
-                    self.attributor.attribute(
-                        factor_probe.name,
-                        baseline_runs,
-                        treatment_runs,
-                        treatment=treatment_profile.name,
-                        locations=locations,
-                        limitations=tuple(
-                            sorted({item for run in treatment_runs for item in run.limitations})
-                        ),
-                    )
+                probe_result = self.attributor.attribute(
+                    factor_probe.name,
+                    baseline_runs,
+                    treatment_runs,
+                    treatment=treatment_profile.name,
+                    locations=locations,
+                    limitations=tuple(
+                        sorted({item for run in treatment_runs for item in run.limitations})
+                    ),
                 )
+                if probe_result.classification != FACTOR_SUPPORTED:
+                    probe_result = replace(probe_result, locations=())
+                probes.append(probe_result)
 
         released_profile = all_released_profile()
         released_runs = tuple(
@@ -210,6 +212,7 @@ class AnalysisOrchestrator:
         )
         if released_changed:
             released_probe = replace(released_probe, classification=INTERACTION_SUSPECTED)
+        released_probe = replace(released_probe, locations=())
         probes.append(released_probe)
 
         limitations = tuple(
