@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from causatrace.attribution import FACTOR_SUPPORTED
+from causatrace.locator import RULE_IMPLICIT_LOCAL_TIME
 from causatrace.orchestrator import AnalysisOrchestrator
 
 
@@ -42,6 +43,9 @@ def test_analysis_identifies_timezone_and_user_line() -> None:
     report = analyze("timezone_date.py")
     timezone_probes = [probe for probe in report.probes if probe.factor == "timezone"]
     assert any(probe.classification == FACTOR_SUPPORTED for probe in timezone_probes)
+    findings = [finding for finding in report.static_findings if finding.rule_id == RULE_IMPLICIT_LOCAL_TIME]
+    assert findings
+    assert findings[0].location.path == "tests/fixtures/timezone_date.py"
 
 
 def test_analysis_withholds_factor_claims_for_unstable_baseline() -> None:

@@ -191,16 +191,14 @@ def _has_keyword(node: ast.Call, name: str) -> bool:
     return any(keyword.arg == name for keyword in node.keywords)
 
 
-def _is_explicit_timezone(node: ast.Call) -> bool:
+def _is_explicit_timezone(node: ast.Call, *, positional_index: int = 0) -> bool:
     """Whether a datetime call supplies a real timezone argument."""
 
     if _has_keyword(node, "tz"):
         keyword = next(keyword for keyword in node.keywords if keyword.arg == "tz")
         return not _constant_none(keyword.value)
-    if len(node.args) >= 2:
-        return not _constant_none(node.args[1])
-    if node.args:
-        return not _constant_none(node.args[0])
+    if len(node.args) > positional_index:
+        return not _constant_none(node.args[positional_index])
     return False
 
 
@@ -486,11 +484,20 @@ class _StaticVisitor(ast.NodeVisitor):
             and parts[-2] in {"datetime", "date"}
             and method in {"now", "today", "utcnow", "fromtimestamp"}
         ):
-            return method in {"today", "utcnow"} or not _is_explicit_timezone(node)
+            return method in {"today", "utcnow"} or not _is_explicit_timezone(
+                node,
+                positional_index=1 if method == "fromtimestamp" else 0,
+            )
         if parts[-2] in self.datetime_modules and method in {"now", "today", "utcnow", "fromtimestamp"}:
-            return method in {"today", "utcnow"} or not _is_explicit_timezone(node)
+            return method in {"today", "utcnow"} or not _is_explicit_timezone(
+                node,
+                positional_index=1 if method == "fromtimestamp" else 0,
+            )
         if parts[-2] in self.datetime_names and method in {"now", "today", "utcnow", "fromtimestamp"}:
-            return method in {"today", "utcnow"} or not _is_explicit_timezone(node)
+            return method in {"today", "utcnow"} or not _is_explicit_timezone(
+                node,
+                positional_index=1 if method == "fromtimestamp" else 0,
+            )
         if parts[-2] in self.date_names and method == "today":
             return True
         return False
