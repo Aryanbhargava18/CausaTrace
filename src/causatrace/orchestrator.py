@@ -88,6 +88,26 @@ class AnalysisOrchestrator:
             )
         )
 
+    @staticmethod
+    def _relative_locations(root: Path, locations):
+        """Keep report paths portable while preserving outside paths verbatim."""
+
+        normalised = []
+        for location in locations:
+            try:
+                relative = Path(location.path).resolve().relative_to(root)
+            except (ValueError, OSError):
+                normalised.append(location)
+            else:
+                normalised.append(replace(location, path=str(relative)))
+        return tuple(normalised)
+
+    def _relative_findings(self, root: Path, findings):
+        return tuple(
+            replace(finding, location=self._relative_locations(root, (finding.location,))[0])
+            for finding in findings
+        )
+
     def analyze(
         self,
         target: str | Path,
@@ -124,7 +144,10 @@ class AnalysisOrchestrator:
         )
         baseline = baseline_runs[0]
         baseline_repeat = baseline_runs[1]
-        static_findings = SourceLocator(root).find_static(root / relative_target)
+        static_findings = self._relative_findings(
+            root,
+            SourceLocator(root).find_static(root / relative_target),
+        )
 
         baseline_report = self.attributor.analyze(
             target=relative_target,
@@ -160,9 +183,12 @@ class AnalysisOrchestrator:
                     )
                     for index in range(trials)
                 )
-                locations = SourceLocator(root).find_runtime(
-                    tuple(event for run in treatment_runs for event in run.trace_events),
+                locations = self._relative_locations(
                     root,
+                    SourceLocator(root).find_runtime(
+                        tuple(event for run in treatment_runs for event in run.trace_events),
+                        root,
+                    ),
                 )
                 probe_result = self.attributor.attribute(
                     factor_probe.name,
@@ -196,9 +222,12 @@ class AnalysisOrchestrator:
             for control_run, released_run in zip(baseline_runs, released_runs)
         )
         released_changed = sum(comparison.changed for comparison in released_comparisons)
-        released_locations = SourceLocator(root).find_runtime(
-            tuple(event for run in released_runs for event in run.trace_events),
+        released_locations = self._relative_locations(
             root,
+            SourceLocator(root).find_runtime(
+                tuple(event for run in released_runs for event in run.trace_events),
+                root,
+            ),
         )
         released_probe = self.attributor.attribute(
             "all_released",
