@@ -152,6 +152,7 @@ def baseline_profile(name: str = "baseline") -> ExecutionProfile:
         environment={"PYTHONHASHSEED": "0"},
         python_random_seed=0,
         numpy_seed=0,
+        listing_seed=0,
         timezone="UTC",
         locale="C.UTF-8",
     )

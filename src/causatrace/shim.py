@@ -244,8 +244,10 @@ def _install_listing_hooks(recorder: EventRecorder, seed: int | None) -> None:
         result = original_listdir(path)
         recorder.record("os.listdir", symbol="os.listdir")
         if seed is not None:
-            randomizer = random.Random(seed)
-            randomizer.shuffle(result)
+            result.sort(key=lambda value: value)
+            if seed != 0:
+                randomizer = random.Random(seed)
+                randomizer.shuffle(result)
         return result
 
     setattr(listdir, "__causatrace_wrapped__", True)
@@ -259,8 +261,10 @@ def _install_listing_hooks(recorder: EventRecorder, seed: int | None) -> None:
         result = list(original_scandir(path))
         recorder.record("os.scandir", symbol="os.scandir")
         if seed is not None:
-            randomizer = random.Random(seed)
-            randomizer.shuffle(result)
+            result.sort(key=lambda entry: entry.name)
+            if seed != 0:
+                randomizer = random.Random(seed)
+                randomizer.shuffle(result)
         return _ScandirResult(result)
 
     setattr(scandir, "__causatrace_wrapped__", True)

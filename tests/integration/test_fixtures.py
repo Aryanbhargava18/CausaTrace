@@ -96,6 +96,28 @@ def test_filesystem_listing_order_changes_with_listing_seed() -> None:
     assert seed_one != seed_two
 
 
+def test_listing_hooks_cover_declared_api_surface() -> None:
+    first = run_fixture(
+        "listing_api_coverage.py",
+        ExecutionProfile(name="listing-one", listing_seed=1),
+    )
+    second = run_fixture(
+        "listing_api_coverage.py",
+        ExecutionProfile(name="listing-two", listing_seed=2),
+    )
+
+    assert first != second
+    assert {line.split("=", 1)[0] for line in first.splitlines()} == {
+        "listdir",
+        "scandir",
+        "glob",
+        "iglob",
+        "iterdir",
+        "path_glob",
+        "path_rglob",
+    }
+
+
 def test_timezone_date_output_is_controlled_by_profile_timezone() -> None:
     utc = run_fixture(
         "timezone_date.py",
