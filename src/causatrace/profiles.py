@@ -132,14 +132,29 @@ class TimezoneFactor:
     name = "timezone"
 
     def profiles(self, baseline: ExecutionProfile) -> tuple[ExecutionProfile, ...]:
-        treatment = "UTC" if baseline.timezone != "UTC" else "America/New_York"
-        return (
+        timezones = ("UTC", "Asia/Kolkata", "America/Los_Angeles", "Pacific/Kiritimati")
+        return tuple(
             replace(
                 baseline,
-                name=f"{baseline.name}:{self.name}",
-                timezone=treatment,
-            ),
+                name=f"{baseline.name}:{self.name}:{timezone}",
+                timezone=timezone,
+            )
+            for timezone in timezones
+            if timezone != baseline.timezone
         )
+
+
+def baseline_profile(name: str = "baseline") -> ExecutionProfile:
+    """Return the pinned P0 control profile."""
+
+    return ExecutionProfile(
+        name=name,
+        environment={"PYTHONHASHSEED": "0"},
+        python_random_seed=0,
+        numpy_seed=0,
+        timezone="UTC",
+        locale="C.UTF-8",
+    )
 
 
 # Descriptive aliases make the public surface discoverable without forcing
@@ -220,9 +235,17 @@ def p0_factor_profiles(
 
 
 def all_released_profile(name: str = "released") -> ExecutionProfile:
-    """Return a profile that does not inject typed factor controls."""
+    """Return a deterministic profile that releases all supported controls."""
 
-    return ExecutionProfile(name=name, locale="C.UTF-8")
+    return ExecutionProfile(
+        name=name,
+        environment={"PYTHONHASHSEED": "1"},
+        python_random_seed=1,
+        numpy_seed=1,
+        listing_seed=1,
+        timezone="Pacific/Kiritimati",
+        locale="C.UTF-8",
+    )
 
 
 # Alternate spelling used by some callers.
@@ -242,6 +265,7 @@ __all__ = [
     "TimezoneFactor",
     "TimezoneFactorProbe",
     "all_released_profile",
+    "baseline_profile",
     "build_environment",
     "default_factor_probes",
     "numpy_available",

@@ -11,7 +11,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from typing import Mapping
+from typing import Any, Mapping
 
 from .capture import capture_output
 from .models import ArtifactSpec, RunRequest, RunResult
@@ -68,6 +68,41 @@ class SubprocessRunner:
         if isinstance(data, dict) and isinstance(data.get("events"), list):
             return tuple(item for item in data["events"] if isinstance(item, dict))
         return ()
+
+    @staticmethod
+    def _remap_event_paths(
+        events: tuple[dict, ...],
+        copy_root: Path,
+        project_root: Path,
+    ) -> tuple[dict, ...]:
+        """Map trace paths from the temporary copy back to source paths."""
+
+        copy_root = copy_root.resolve()
+        project_root = project_root.resolve()
+
+        def remap(value: Any) -> Any:
+            if isinstance(value, dict):
+                result = dict(value)
+                for key in ("path", "file", "filename", "source_path", "code_filename"):
+                    raw = result.get(key)
+                    if isinstance(raw, str):
+                        try:
+                            relative = Path(raw).resolve().relative_to(copy_root)
+                        except (ValueError, OSError):
+                            continue
+                        result[key] = str(project_root / relative)
+                for key, child in tuple(result.items()):
+                    if key in {"path", "file", "filename", "source_path", "code_filename"}:
+                        continue
+                    result[key] = remap(child)
+                return result
+            if isinstance(value, list):
+                return [remap(item) for item in value]
+            if isinstance(value, tuple):
+                return tuple(remap(item) for item in value)
+            return value
+
+        return tuple(remap(event) for event in events)
 
     @staticmethod
     def _artifact_root(path: Path, project_root: Path) -> Path:
@@ -182,6 +217,7 @@ class SubprocessRunner:
                 stderr,
                 artifact_specs=copied_specs,
                 artifact_root=copy_root,
+                metric_patterns=request.metric_patterns,
             )
             artifacts = {
                 artifact_names.get(path, path): digest
@@ -202,6 +238,7 @@ class SubprocessRunner:
                     display_key = f"{display_key}_{suffix}"
                 metrics[display_key] = value
             events = self._event_data(event_path) if request.trace else ()
+            events = self._remap_event_paths(events, copy_root, project_root)
             limitations = (CHILD_PROCESS_LIMITATION,)
             if not request.trace:
                 limitations = (

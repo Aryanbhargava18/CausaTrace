@@ -16,6 +16,7 @@ from pathlib import Path
 import random
 import runpy
 import sys
+import sysconfig
 import threading
 import time
 from collections.abc import Iterator
@@ -46,14 +47,22 @@ class EventRecorder:
 
     def _location(self) -> tuple[str | None, int | None, str]:
         frame = inspect.currentframe()
+        stdlib_root = Path(sysconfig.get_paths().get("stdlib", "")).resolve()
         try:
             frame = frame.f_back if frame else None
             while frame is not None:
                 path = str(frame.f_code.co_filename)
-                if Path(path).resolve() != Path(__file__).resolve():
-                    line = frame.f_lineno
-                    kind = "stdlib" if path.startswith(sys.base_prefix) else "user"
-                    return path, line, kind
+                if path.startswith("<") or Path(path).resolve() == Path(__file__).resolve():
+                    frame = frame.f_back
+                    continue
+                try:
+                    is_stdlib = Path(path).resolve().is_relative_to(stdlib_root)
+                except (OSError, ValueError):
+                    is_stdlib = False
+                if is_stdlib:
+                    frame = frame.f_back
+                    continue
+                return path, frame.f_lineno, "user"
                 frame = frame.f_back
         finally:
             # Break reference cycles created by frame walking.
@@ -182,6 +191,23 @@ def _install_numpy_hooks(recorder: EventRecorder, seed: int | None) -> None:
                 name,
                 _frame_wrapper(recorder, f"numpy.random.{name}", original),
             )
+
+    original_default_rng = getattr(np.random, "default_rng", None)
+    if original_default_rng is not None:
+        def default_rng(seed_value: Any = None) -> Any:
+            recorder.record(
+                "numpy.random.default_rng",
+                seed=seed_value if seed_value is not None else seed,
+                controlled=seed_value is None and seed is not None,
+                symbol="numpy.random.default_rng",
+            )
+            if seed_value is None and seed is not None:
+                return original_default_rng(seed)
+            return original_default_rng(seed_value)
+
+        setattr(default_rng, "__causatrace_wrapped__", True)
+        setattr(default_rng, "__causatrace_original__", original_default_rng)
+        np.random.default_rng = default_rng
 
 
 class _ScandirResult:

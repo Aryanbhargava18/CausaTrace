@@ -193,6 +193,7 @@ def capture_output(
     *,
     artifact_specs: Iterable[ArtifactSpec] = (),
     artifact_root: str | Path | None = None,
+    metric_patterns: Iterable[str | re.Pattern[str]] = (),
     encoding: str = "utf-8",
 ) -> CapturedOutput:
     """Capture streams, artifact hashes and optional numeric metrics.
@@ -211,6 +212,9 @@ def capture_output(
     metrics: dict[str, float] = {}
     root = Path(artifact_root) if artifact_root is not None else None
     combined_text = stdout_text + stderr_text
+
+    for pattern in metric_patterns:
+        _merge_metrics(metrics, extract_numeric_metrics(combined_text, pattern))
 
     for spec in artifact_specs:
         path = Path(spec.path)

@@ -46,6 +46,7 @@ class RunRequest:
     )
     timeout_seconds: float = 30.0
     artifacts: tuple[ArtifactSpec, ...] = ()
+    metric_patterns: tuple[str, ...] = ()
     trace: bool = True
     temporary_copy: bool = True
 

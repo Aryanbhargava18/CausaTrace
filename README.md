@@ -31,17 +31,36 @@ docker run --rm --network none causatrace
 The Docker build may download pinned build inputs. The container test command
 must not download anything or access the network.
 
-## Planned usage
+## Usage
 
-The P0 command will accept a Python script and emit a readable terminal report
-or machine-readable JSON. The report will distinguish a stable baseline,
-baseline instability, factor-supported changes, suspected interactions, and
-inconclusive experiments.
+The P0 command accepts a Python script and emits a readable terminal report or
+machine-readable JSON. It runs a pinned baseline three times, then runs three
+paired trials for each supported intervention. The report distinguishes a
+stable baseline, baseline instability, factor-supported changes, suspected
+interactions, and inconclusive experiments.
 
 ```bash
-causatrace analyze path/to/script.py
-causatrace analyze path/to/script.py --format json
+uv run --offline causatrace analyze path/to/script.py --project-root .
+uv run --offline causatrace analyze path/to/script.py --format json > report.json
 ```
+
+Optional artifact hashes and numeric stream metrics can be requested with
+`--artifact PATH` and repeated `--metric-regex REGEX` options. P0 uses exact
+SHA-256 output comparisons; numeric tolerances, CSV row diffs, pytest/JUnit
+results, verified codemods, and HTML reports are P1 work.
+
+The supported P0 interventions are:
+
+- `PYTHONHASHSEED` with a fresh interpreter
+- Python's module-level random generator
+- NumPy's legacy generator and unseeded `default_rng()` when NumPy is present
+- filesystem listing order through supported listing hooks
+- `UTC`, `Asia/Kolkata`, `America/Los_Angeles`, and `Pacific/Kiritimati`
+- one all-released profile to flag possible interactions
+
+Static AST findings are labelled heuristic and are never runtime proof. Runtime
+locations are reported only for intercepted operations whose first relevant
+frame is in the target project.
 
 ## Scope and limitations
 
@@ -65,6 +84,6 @@ causatrace analyze path/to/script.py --format json
 
 ## Project status
 
-The implementation is being delivered in small green milestones. P0 is the
-release target; pytest/JUnit support, tolerances, CSV comparisons, verified
-fixes, clean-machine profiles, HTML reports, and benchmark tooling are P1.
+P0 is the release target. P1 includes pytest/JUnit support, tolerances, CSV
+comparisons, verified fixes, clean-machine profiles, HTML reports, and the
+fixture benchmark command. `libcst` is intentionally not a P0 dependency.

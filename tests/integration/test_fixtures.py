@@ -101,13 +101,23 @@ def test_timezone_date_output_is_controlled_by_profile_timezone() -> None:
         "timezone_date.py",
         ExecutionProfile(name="utc", timezone="UTC"),
     )
-    new_york = run_fixture(
+    kolkata = run_fixture(
         "timezone_date.py",
-        ExecutionProfile(name="new-york", timezone="America/New_York"),
+        ExecutionProfile(name="kolkata", timezone="Asia/Kolkata"),
+    )
+    los_angeles = run_fixture(
+        "timezone_date.py",
+        ExecutionProfile(name="los-angeles", timezone="America/Los_Angeles"),
+    )
+    kiritimati = run_fixture(
+        "timezone_date.py",
+        ExecutionProfile(name="kiritimati", timezone="Pacific/Kiritimati"),
     )
 
-    assert utc == "1970-01-01"
-    assert new_york == "1969-12-31"
+    assert utc == "2024-01-01"
+    assert kolkata == "2024-01-02"
+    assert los_angeles == "2024-01-01"
+    assert kiritimati == "2024-01-02"
 
 
 def test_environment_variable_changes_are_visible_in_fixture_output() -> None:
