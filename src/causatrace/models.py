@@ -22,6 +22,7 @@ class Location:
 class ExecutionProfile:
     name: str
     environment: Mapping[str, str] = field(default_factory=dict)
+    inherit_environment: bool = True
     python_random_seed: int | None = None
     numpy_seed: int | None = None
     listing_seed: int | None = None

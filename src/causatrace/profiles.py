@@ -29,7 +29,17 @@ def build_environment(
     interpreter startup.
     """
 
-    environment = dict(os.environ if base is None else base)
+    host_environment = os.environ if base is None else base
+    if profile.inherit_environment:
+        environment = dict(host_environment)
+    else:
+        # A clean-machine profile intentionally retains only the minimum needed
+        # for interpreter diagnostics and executable discovery.  The runner
+        # invokes an absolute interpreter path, so PATH is informational.
+        environment = {
+            "PATH": host_environment.get("PATH", os.defpath),
+            "PYTHONIOENCODING": "utf-8",
+        }
     environment.update({str(key): str(value) for key, value in profile.environment.items()})
 
     if profile.python_random_seed is not None:

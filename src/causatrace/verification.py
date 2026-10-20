@@ -17,15 +17,17 @@ from .runner import CHILD_PROCESS_LIMITATION, SubprocessRunner
 def clean_machine_profile(name: str = "clean-machine") -> ExecutionProfile:
     """Return a minimal, host-normalized profile for repeated verification.
 
-    Unlike :func:`baseline_profile`, this profile does not inject Python,
-    NumPy, or listing seeds.  It fixes only interpreter hash and locale/time
-    controls so a repair can be checked under conditions closer to a clean
-    machine while remaining reproducible enough for the verifier itself.
+    Unlike :func:`baseline_profile`, this profile does not inject Python or
+    NumPy random seeds. It uses a different hash seed and a fixed shuffled
+    listing order, with a minimal declared environment, so repaired code is
+    checked under conditions closer to a clean machine.
     """
 
     return ExecutionProfile(
         name=name,
-        environment={"PYTHONHASHSEED": "0"},
+        environment={"PYTHONHASHSEED": "123"},
+        inherit_environment=False,
+        listing_seed=37,
         timezone="UTC",
         locale="C.UTF-8",
     )
