@@ -13,7 +13,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.6.14 /uv /uvx /bin/
 
 WORKDIR /app
 
-COPY pyproject.toml uv.lock .python-version README.md Makefile .env.example ./
+COPY pyproject.toml uv.lock .python-version README.md LICENSE Dockerfile Makefile .env.example ./
 COPY src ./src
 COPY tests ./tests
 
