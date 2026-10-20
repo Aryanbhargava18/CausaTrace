@@ -191,12 +191,16 @@ examples/flaky_pytest/test_order.py:6: AssertionError
 E       AssertionError: assert ('dog', 'cat') == ('cat', 'dog')
 ```
 
-Run CausaTrace against the test file to see the factor and source finding:
+Run CausaTrace against the test file to see the static source finding:
 
 ```bash
 uv run --offline causatrace analyze \
   examples/flaky_pytest/test_order.py --project-root .
 ```
+
+Because this file defines a pytest test rather than executing it as a standalone
+script, `analyze` reports the static set-order heuristic; the dynamic
+seed-dependent failure is established by the two pytest runs above.
 
 ## Supported factors
 
