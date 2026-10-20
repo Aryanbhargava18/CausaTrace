@@ -179,6 +179,23 @@ The image uses Python 3.12 slim, installs `tzdata` and `make`, and installs the
 locked environment. The container test runs without network access; the image
 build may download its pinned base and build inputs.
 
+## Deploying as a batch container
+
+CausaTrace is a command-line batch tool rather than a long-running web service.
+The Docker image is the deployment artifact:
+
+```bash
+docker build -t causatrace:0.1.0 .
+docker run --rm --network none causatrace:0.1.0 make test
+docker run --rm --network none \
+  -v "$PWD:/workspace:ro" -w /workspace \
+  causatrace:0.1.0 \
+  causatrace analyze path/to/script.py --project-root /workspace
+```
+
+Build the image in a connected environment, then run it with `--network none`
+in a worker or CI job when the analysis must be isolated from the network.
+
 ## Where it fits
 
 CausaTrace complements tools that observe or record known inputs:
