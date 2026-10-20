@@ -17,6 +17,8 @@ from dataclasses import dataclass
 import difflib
 from typing import Iterable
 
+import libcst as cst
+
 
 _SKLEARN_ESTIMATORS = {
     "AdaBoostClassifier",
@@ -426,6 +428,203 @@ def _apply_edits(source: str, edits: Iterable[_Edit]) -> str:
     return source
 
 
+def _cst_parts(node: cst.CSTNode) -> tuple[str, ...]:
+    if isinstance(node, cst.Name):
+        return (node.value,)
+    if isinstance(node, cst.Attribute):
+        prefix = _cst_parts(node.value)
+        return (*prefix, node.attr.value) if prefix else ()
+    return ()
+
+
+class _CSTRepairTransformer(cst.CSTTransformer):
+    """Small, syntax-aware codemod set used by the P1 preview."""
+
+    def __init__(self) -> None:
+        self.os_modules: set[str] = set()
+        self.listdir_names: set[str] = set()
+        self.glob_modules: set[str] = set()
+        self.glob_names: set[str] = set()
+        self.pathlib_modules: set[str] = set()
+        self.path_names: set[str] = set()
+        self.numpy_modules: set[str] = set()
+        self.numpy_random_modules: set[str] = set()
+        self.default_rng_names: set[str] = set()
+        self.sklearn_names: set[str] = set()
+        self.sklearn_modules: set[str] = set()
+        self.set_names: set[str] = set()
+        self._sorted_depth = 0
+
+    def visit_Import(self, node: cst.Import) -> bool:
+        for alias in node.names:
+            name = ".".join(_cst_parts(alias.name))
+            bound = alias.asname.name.value if alias.asname else name.split(".")[0]
+            if name == "os":
+                self.os_modules.add(bound)
+            elif name == "glob":
+                self.glob_modules.add(bound)
+            elif name == "pathlib":
+                self.pathlib_modules.add(bound)
+            elif name == "numpy":
+                self.numpy_modules.add(bound)
+            elif name == "numpy.random":
+                self.numpy_random_modules.add(bound)
+            if name.startswith("sklearn.") or name == "sklearn":
+                self.sklearn_modules.add(bound)
+        return True
+
+    def visit_ImportFrom(self, node: cst.ImportFrom) -> bool:
+        module = ".".join(_cst_parts(node.module)) if node.module else ""
+        for alias in node.names:
+            if isinstance(alias, cst.ImportStar):
+                continue
+            name = ".".join(_cst_parts(alias.name))
+            bound = alias.asname.name.value if alias.asname else name
+            if module == "os" and name == "listdir":
+                self.listdir_names.add(bound)
+            elif module == "glob" and name in {"glob", "iglob"}:
+                self.glob_names.add(bound)
+            elif module == "pathlib" and name == "Path":
+                self.path_names.add(bound)
+            elif module == "numpy.random" and name == "default_rng":
+                self.default_rng_names.add(bound)
+            elif module == "numpy" and name == "random":
+                self.numpy_random_modules.add(bound)
+            if module.startswith("sklearn"):
+                self.sklearn_names.add(bound)
+        return True
+
+    def visit_Assign(self, node: cst.Assign) -> bool:
+        if self._is_set_expr(node.value):
+            for target in node.targets:
+                if isinstance(target.target, cst.Name):
+                    self.set_names.add(target.target.value)
+        return True
+
+    def visit_AnnAssign(self, node: cst.AnnAssign) -> bool:
+        if node.value is not None and self._is_set_expr(node.value) and isinstance(node.target, cst.Name):
+            self.set_names.add(node.target.value)
+        return True
+
+    def visit_Call(self, node: cst.Call) -> bool:
+        if _cst_parts(node.func) == ("sorted",):
+            self._sorted_depth += 1
+        return True
+
+    def _is_set_expr(self, node: cst.CSTNode) -> bool:
+        if isinstance(node, (cst.Set, cst.SetComp)):
+            return True
+        if isinstance(node, cst.Call):
+            call_parts = _cst_parts(node.func)
+            return len(call_parts) == 1 and call_parts[0] in {"set", "frozenset"}
+        parts = _cst_parts(node)
+        if len(parts) == 1 and parts[0] in self.set_names:
+            return True
+        return len(parts) == 1 and parts[0] in {"set", "frozenset"}
+
+    def _is_default_rng(self, node: cst.Call) -> bool:
+        parts = _cst_parts(node.func)
+        if len(parts) == 1:
+            return parts[0] in self.default_rng_names
+        return (
+            parts[-1:] == ("default_rng",)
+            and (
+                len(parts) >= 3 and parts[-3] in self.numpy_modules and parts[-2] == "random"
+                or len(parts) >= 2 and parts[-2] in self.numpy_random_modules
+            )
+        )
+
+    def _is_listing(self, node: cst.Call) -> bool:
+        parts = _cst_parts(node.func)
+        if len(parts) == 1 and parts[0] in self.listdir_names:
+            return True
+        if parts[-2:] in {(module, "listdir") for module in self.os_modules}:
+            return True
+        if len(parts) == 1 and parts[0] == "__direct_os__":
+            return True
+        if len(parts) >= 2 and parts[-2] in self.glob_modules and parts[-1] in {"glob", "iglob"}:
+            return True
+        if len(parts) == 1 and parts[0] in self.glob_names:
+            return True
+        if isinstance(node.func, cst.Attribute) and node.func.attr.value in _PATH_LISTING_METHODS:
+            receiver = node.func.value
+            receiver_parts = _cst_parts(receiver.func) if isinstance(receiver, cst.Call) else ()
+            return (
+                isinstance(receiver, cst.Call)
+                and receiver_parts[-1:] == ("Path",)
+                and (len(receiver_parts) == 1 or receiver_parts[-2] in self.pathlib_modules)
+            )
+        return False
+
+    def _is_estimator(self, node: cst.Call) -> bool:
+        parts = _cst_parts(node.func)
+        if not parts:
+            return False
+        if len(parts) == 1:
+            return parts[0] in self.sklearn_names
+        return (
+            parts[0] == "sklearn"
+            or parts[0] in self.sklearn_modules
+            or ".".join(parts[:-1]) in self.sklearn_modules
+        ) and parts[-1] in _SKLEARN_ESTIMATORS
+
+    @staticmethod
+    def _has_keyword(node: cst.Call, name: str) -> bool:
+        return any(argument.keyword and argument.keyword.value == name for argument in node.args)
+
+    @staticmethod
+    def _has_star(node: cst.Call) -> bool:
+        return any(argument.star for argument in node.args)
+
+    @staticmethod
+    def _sorted(node: cst.CSTNode) -> cst.Call:
+        return cst.Call(func=cst.Name("sorted"), args=[cst.Arg(value=node)])
+
+    def leave_Call(self, original_node: cst.Call, updated_node: cst.Call) -> cst.CSTNode:
+        is_sorted = _cst_parts(original_node.func) == ("sorted",)
+        try:
+            if not is_sorted and self._sorted_depth == 0 and self._is_listing(original_node):
+                return self._sorted(updated_node)
+            if self._is_default_rng(original_node) and not self._has_star(original_node):
+                if not original_node.args:
+                    return updated_node.with_changes(args=[cst.Arg(value=cst.Integer("0"))])
+                first = original_node.args[0]
+                if first.keyword is None and isinstance(first.value, cst.Name) and first.value.value == "None":
+                    args = [first.with_changes(value=cst.Integer("0")), *updated_node.args[1:]]
+                    return updated_node.with_changes(args=args)
+            if self._is_estimator(original_node) and not self._has_keyword(original_node, "random_state") and not self._has_star(original_node):
+                equal = cst.AssignEqual(
+                    whitespace_before=cst.SimpleWhitespace(""),
+                    whitespace_after=cst.SimpleWhitespace(""),
+                )
+                return updated_node.with_changes(
+                    args=[
+                        *updated_node.args,
+                        cst.Arg(
+                            keyword=cst.Name("random_state"),
+                            equal=equal,
+                            value=cst.Integer("0"),
+                        ),
+                    ]
+                )
+            if len(_cst_parts(original_node.func)) == 1 and _cst_parts(original_node.func) == ("list",) and len(original_node.args) == 1 and self._is_set_expr(original_node.args[0].value):
+                return self._sorted(updated_node.args[0].value)
+            return updated_node
+        finally:
+            if is_sorted:
+                self._sorted_depth -= 1
+
+    def leave_For(self, original_node: cst.For, updated_node: cst.For) -> cst.CSTNode:
+        if self._is_set_expr(original_node.iter):
+            return updated_node.with_changes(iter=self._sorted(updated_node.iter))
+        return updated_node
+
+    def leave_CompFor(self, original_node: cst.CompFor, updated_node: cst.CompFor) -> cst.CSTNode:
+        if self._is_set_expr(original_node.iter):
+            return updated_node.with_changes(iter=self._sorted(updated_node.iter))
+        return updated_node
+
+
 def _diff(original: str, transformed: str, filename: str) -> str:
     if original == transformed:
         return ""
@@ -451,8 +650,12 @@ def preview_fixes(source: str, *, filename: str = "source.py") -> FixResult:
         return FixResult(False, "", (message,), source)
 
     scanner = _RepairScanner(source, tree)
-    edits, warning_records = scanner.edits()
-    transformed = _apply_edits(source, edits)
+    _edits, warning_records = scanner.edits()
+    try:
+        transformed = cst.parse_module(source).visit(_CSTRepairTransformer()).code
+    except Exception as error:  # pragma: no cover - defensive fallback for unsupported CST syntax
+        transformed = _apply_edits(source, _edits)
+        warning_records.append((1, f"LibCST codemod fallback used: {error}"))
     warnings = tuple(
         message for _line, message in sorted(set(warning_records), key=lambda item: (item[0], item[1]))
     )

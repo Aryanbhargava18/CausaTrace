@@ -35,6 +35,9 @@ def test_clean_machine_profile_can_expose_unrepaired_process_randomness(tmp_path
     result = verify_clean_machine(request)
 
     assert result.profile == clean_machine_profile()
+    assert result.profile.inherit_environment is False
+    assert result.profile.listing_seed == 37
+    assert result.profile.environment["PYTHONHASHSEED"] == "123"
     assert result.verified is False
     assert len(result.runs) == 5
     assert "output SHA-256 hashes differ" in result.warnings[0]

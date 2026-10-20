@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from html import escape
 from typing import Any
 
 from .models import AnalysisReport, Location, ProbeResult, StaticFinding
@@ -165,6 +166,77 @@ def render_terminal(report: AnalysisReport) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _html_status_class(classification: str) -> str:
+    return {
+        "factor_supported": "supported",
+        "factor_not_observed": "not-observed",
+        "interaction_suspected": "interaction",
+        "inconclusive": "inconclusive",
+    }.get(classification, "neutral")
+
+
+def render_html(report: AnalysisReport) -> str:
+    """Render a self-contained HTML report with an inline consistency chart."""
+
+    probes = sorted(report.probes, key=_probe_key)
+    rows: list[str] = []
+    bars: list[str] = []
+    for index, probe in enumerate(probes):
+        css = _html_status_class(probe.classification)
+        label = escape(f"{probe.factor}: {probe.treatment}")
+        comparison = probe.comparison
+        evidence = escape(comparison.explanation if comparison else "No comparison evidence.")
+        rows.append(
+            f"<tr class='{css}'><td>{label}</td><td>{escape(probe.classification)}</td>"
+            f"<td>{probe.changed_trials}/{probe.trials}</td><td>{probe.consistency:.3f}</td>"
+            f"<td>{evidence}</td></tr>"
+        )
+        x = 20 + index * 150
+        height = max(2, int(120 * probe.consistency))
+        y = 150 - height
+        bars.append(
+            f"<rect class='{css}' x='{x}' y='{y}' width='100' height='{height}'>"
+            f"<title>{label}: {probe.consistency:.3f}</title></rect>"
+        )
+        bars.append(f"<text x='{x}' y='170'>{escape(probe.factor[:18])}</text>")
+
+    findings = "".join(
+        f"<li><code>{escape(finding.rule_id)}</code> {escape(finding.message)} "
+        f"at <code>{escape(finding.location.path)}:{finding.location.line}</code></li>"
+        for finding in sorted(report.static_findings, key=_static_key)
+    ) or "<li>None</li>"
+    limitations = "".join(
+        f"<li>{escape(limitation)}</li>" for limitation in sorted(set(report.limitations))
+    ) or "<li>None</li>"
+    table = "".join(rows) or "<tr><td colspan='5'>No factor probes ran.</td></tr>"
+    chart_width = max(360, 40 + len(probes) * 150)
+    return f"""<!doctype html>
+<html lang='en'>
+<head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>CausaTrace report</title>
+<style>
+body{{font-family:system-ui,sans-serif;max-width:1200px;margin:2rem auto;padding:0 1rem;color:#172033}}
+table{{border-collapse:collapse;width:100%;font-size:.9rem}}th,td{{border:1px solid #d6dbe5;padding:.5rem;text-align:left;vertical-align:top}}
+th{{background:#edf1f7}}.supported{{fill:#16803c;background:#e5f6ea}}.not-observed{{fill:#6b7280;background:#f3f4f6}}
+.interaction{{fill:#b7791f;background:#fff8e1}}.inconclusive{{fill:#b42318;background:#fff0ee}}.neutral{{fill:#42526e;background:#f5f7fa}}
+svg{{border:1px solid #d6dbe5;background:#fff;max-width:100%;overflow:auto}}svg text{{font-size:11px;fill:#172033}}
+code,pre{{font-family:ui-monospace,SFMono-Regular,monospace}}section{{margin:2rem 0}}
+</style></head>
+<body><h1>CausaTrace report</h1><p><strong>Target:</strong> {escape(report.target)}<br>
+<strong>Status:</strong> <code>{escape(report.status)}</code></p>
+<section><h2>Factor consistency</h2>
+<svg role='img' aria-label='Factor consistency chart' width='{chart_width}' height='190' viewBox='0 0 {chart_width} 190'>
+<line x1='10' y1='150' x2='{chart_width - 10}' y2='150' stroke='#8993a4'/>
+{''.join(bars)}</svg></section>
+<section><h2>Runtime factor attribution</h2><table><thead><tr><th>Factor</th><th>Classification</th><th>Changed</th><th>Consistency</th><th>Evidence</th></tr></thead>
+<tbody>{table}</tbody></table></section>
+<section><h2>Static findings (not runtime proof)</h2><ul>{findings}</ul></section>
+<section><h2>Limitations</h2><ul>{limitations}</ul></section>
+<section><h2>Machine-readable snapshot</h2><pre>{escape(render_json(report))}</pre></section>
+</body></html>
+"""
+
+
 class TerminalReporter:
     """Implementation of the shared ``Reporter`` protocol for terminal text."""
 
@@ -179,8 +251,16 @@ class JsonReporter:
         return render_json(report)
 
 
+class HtmlReporter:
+    """Implementation of the shared reporter protocol for self-contained HTML."""
+
+    def render(self, report: AnalysisReport) -> str:
+        return render_html(report)
+
+
 TextReporter = TerminalReporter
 JSONReporter = JsonReporter
+HTMLReporter = HtmlReporter
 
 
 def report_terminal(report: AnalysisReport) -> str:
@@ -191,13 +271,21 @@ def report_json(report: AnalysisReport) -> str:
     return render_json(report)
 
 
+def report_html(report: AnalysisReport) -> str:
+    return render_html(report)
+
+
 __all__ = [
     "JSONReporter",
     "JsonReporter",
+    "HTMLReporter",
+    "HtmlReporter",
     "TerminalReporter",
     "TextReporter",
     "render_json",
+    "render_html",
     "render_terminal",
     "report_json",
+    "report_html",
     "report_terminal",
 ]

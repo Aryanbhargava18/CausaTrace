@@ -12,6 +12,8 @@ from causatrace.p1_compare import (
     render_html_report,
     HTMLReportSection,
 )
+from causatrace.models import AnalysisReport, OutputComparison, ProbeResult
+from causatrace.reporting import render_html
 
 
 def test_numeric_comparison_reports_absolute_and_relative_evidence() -> None:
@@ -93,3 +95,34 @@ def test_html_report_is_self_contained_and_escapes_text() -> None:
     assert "CausaTrace &lt;P1&gt;" in html
     assert "&lt;unsafe&gt;&amp;" in html
     assert "http" not in html
+
+
+def test_analysis_html_report_contains_inline_variance_chart() -> None:
+    report = AnalysisReport(
+        schema_version="1.0",
+        target="fixture.py",
+        status="stable_baseline",
+        probes=(
+            ProbeResult(
+                factor="hash_seed",
+                treatment="seed=1",
+                trials=3,
+                changed_trials=3,
+                consistency=1.0,
+                classification="factor_supported",
+                comparison=OutputComparison(
+                    changed=True,
+                    stdout_changed=True,
+                    stderr_changed=False,
+                    explanation="stdout SHA-256 changed",
+                ),
+            ),
+        ),
+    )
+
+    html = render_html(report)
+
+    assert "Factor consistency" in html
+    assert "<svg" in html
+    assert "hash_seed: seed=1" in html
+    assert "Machine-readable snapshot" in html
