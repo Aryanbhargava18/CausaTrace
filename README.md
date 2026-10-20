@@ -1,66 +1,110 @@
 # CausaTrace
 
-> **An evidence-first causal reproducibility debugger for Python experiments.**
+> An evidence-first causal reproducibility debugger for Python experiments.
 
 [![CI](https://github.com/Aryanbhargava18/CausaTrace/actions/workflows/ci.yml/badge.svg)](https://github.com/Aryanbhargava18/CausaTrace/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/Aryanbhargava18/CausaTrace)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.12.8-3776AB?logo=python&logoColor=white)](.python-version)
 
-CausaTrace answers the question ordinary “run it again” debugging cannot:
+When a Python experiment changes between runs, CausaTrace helps answer three
+practical questions:
 
-> **Which tested hidden factor changed my program's result, where did it enter the execution, and did the repair actually restore reproducibility?**
+1. **Which tested runtime factor changed the result?**
+2. **Where did that behavior enter the program?**
+3. **Did the repair restore reproducibility?**
 
-It does not guess from a single trace. It establishes a pinned baseline, performs
-controlled interventions, compares hashes and metrics, records runtime evidence,
-separates static heuristics from proof, and refuses to claim success when the
-evidence is unstable or incomplete.
+It investigates hidden execution factors such as hash randomization, random
+number generators, filesystem ordering, and timezone. Rather than inferring a
+cause from one trace, it runs controlled baseline and treatment trials,
+records the evidence, and reports when the evidence is insufficient.
 
-## Why this matters
+## What it does
 
-Scientific and data workflows often change because of an implicit seed, hash
-order, filesystem order, timezone, locale, or environment assumption. Existing
-test runners tell you that output changed; experiment trackers record parameters
-you already knew to record. CausaTrace tests likely hidden factors directly and
-returns an auditable result instead of a plausible explanation.
+- Establishes a repeated, pinned baseline before making a causal claim.
+- Intervenes on one runtime factor at a time using paired trials.
+- Compares stdout, stderr, exit status, artifacts, and numeric metrics.
+- Combines runtime locations with clearly-labelled static heuristics.
+- Suggests small source repairs and verifies them across repeated runs.
+- Produces terminal, JSON, and self-contained HTML reports.
+- Runs locally and offline after dependencies are installed.
 
-## The gap in existing tools
+## Quick start
 
-CausaTrace is complementary to mature projects rather than pretending to
-replace them:
+Requirements: Python **3.12.8** and [`uv`](https://docs.astral.sh/uv/).
 
-| Tool category | What it does well | What CausaTrace adds |
-|---|---|---|
-| [pytest](https://github.com/pytest-dev/pytest) / [Hypothesis](https://github.com/HypothesisWorks/hypothesis) | Finds failing tests and counterexample inputs | Intervenes on hidden runtime factors such as hash seed, timezone, RNG, and listing order |
-| [DVC](https://github.com/iterative/dvc) / [MLflow](https://github.com/mlflow/mlflow) | Tracks declared data, parameters, metrics, and runs | Searches for undeclared causes that were never logged |
-| [ReproZip](https://github.com/VIDA-NYU/reprozip) | Captures dependencies and replays an execution | Explains which tested factor changed the result and suggests a source repair |
-| [rr](https://github.com/rr-debugger/rr) | Records and replays low-level Linux execution | Provides a Python/scientific-computing workflow with factor experiments and reports |
-| **CausaTrace** | Controlled factor intervention plus evidence | The focused loop: **intervene → compare → localize → repair → verify** |
+Install the locked development environment:
 
-The project does not claim universal causal inference. It claims a narrower,
-testable result: changing factor **F** under a declared protocol repeatedly
-changed output **O**, with the effect and limitations recorded in the report.
+```bash
+uv sync --locked --all-groups
+```
 
-## Quick demo
-
-From a clean checkout:
+Run the included demonstration:
 
 ```bash
 make demo
 ```
 
-The offline demo:
+The demonstration uses a small set-order experiment. It changes
+`PYTHONHASHSEED` in controlled trials, identifies the resulting output change,
+shows the source location, verifies a stable control, and deliberately rejects
+an unrepaired `random.random()` script. That expected rejection is important:
+verification must not hide nondeterminism by applying CausaTrace's own seeds.
 
-1. Runs a planted set-order experiment.
-2. Changes `PYTHONHASHSEED` in controlled paired trials.
-3. Reports `factor_supported` with `3/3` consistency and a source location.
-4. Verifies a clean control across five runs.
-5. Deliberately rejects an unrepaired `random.random()` program.
+Run the test suite:
 
-The expected random verification failure is part of the proof: verification is
-not masking nondeterminism with CausaTrace's own seeds.
+```bash
+make test
+```
 
-For the complete local check, run `make judge`. It runs the offline test suite,
-the causal demo, and the planted-case benchmark; all three must pass.
+## Typical workflow
+
+Analyze a Python script and choose a report format:
+
+```bash
+uv run --offline causatrace analyze path/to/script.py --project-root .
+uv run --offline causatrace analyze path/to/script.py --format json > report.json
+uv run --offline causatrace analyze path/to/script.py --format html --output report.html
+```
+
+Pass arguments to the target after `--`:
+
+```bash
+uv run --offline causatrace analyze path/to/script.py \
+  --project-root . -- input.csv
+```
+
+Preview a repair, apply it explicitly, then verify the result:
+
+```bash
+uv run --offline causatrace fix path/to/script.py
+uv run --offline causatrace fix path/to/script.py --write
+uv run --offline causatrace verify path/to/script.py --project-root .
+```
+
+`fix` is preview-only by default. `--write` is explicit; if verification fails,
+the original source is restored. Verification requires five successful runs
+with identical stdout, stderr, and requested artifact hashes.
+
+## Evidence model
+
+Each analysis follows the same controlled protocol:
+
+1. **Baseline stability** — three pinned baseline runs must agree. If they do
+   not, CausaTrace reports `baseline_unstable` and withholds attribution.
+2. **Paired intervention** — each factor is tested through three baseline and
+   treatment pairs.
+3. **Treatment stability** — a treatment must produce a repeatable difference;
+   a one-off change is not enough.
+4. **Localization** — intercepted operations and bounded call stacks provide
+   runtime locations. AST findings are labelled heuristic and are not treated
+   as runtime proof.
+5. **Audit output** — reports include factor profiles, hashes, metrics, exit
+   status, timeout state, artifact state, and per-trial evidence without copying
+   raw program output or secrets.
+
+The result is deliberately narrow: changing factor **F** under the declared
+protocol repeatedly changed output **O**. It is not a claim of universal causal
+inference or a guarantee that untested factors are safe.
 
 ## Example result
 
@@ -73,83 +117,22 @@ clean control: PASS (1 output hash)
 unrepaired random script: EXPECTED FAIL (5 output hashes)
 ```
 
-## Install and run
+## Supported factors
 
-Requirements: Python **3.12.8** and `uv`. The committed `uv.lock` pins the
-development environment.
+| Factor | What is varied |
+|---|---|
+| `PYTHONHASHSEED` | Hash-dependent ordering in a fresh interpreter |
+| Python random | Module-level Python RNG state |
+| NumPy random | Legacy generator and unseeded `default_rng()` when available |
+| Filesystem listing | Supported listing hooks and their ordering |
+| Timezone | `UTC`, `Asia/Kolkata`, `America/Los_Angeles`, and `Pacific/Kiritimati` |
+| All released | An interaction profile that releases the tested controls together |
 
-```bash
-uv sync --locked --all-groups
-make test
-make demo
-```
-
-### Configuration and secrets
-
-CausaTrace requires no API keys or runtime secrets. `.env.example` is included
-as the safe configuration template; it intentionally contains comments only.
-Real `.env` files are ignored by Git.
-
-Analyze a script:
-
-```bash
-uv run --offline causatrace analyze path/to/script.py --project-root .
-uv run --offline causatrace analyze path/to/script.py --format json > report.json
-uv run --offline causatrace analyze path/to/script.py --format html --output report.html
-```
-
-Pass target arguments after `--`:
-
-```bash
-uv run --offline causatrace analyze path/to/script.py --project-root . -- input.csv
-```
-
-## Evidence workflow
-
-Each analysis performs:
-
-1. **Three pinned baseline runs.** If any baseline output differs, CausaTrace
-   reports `baseline_unstable` and withholds causal attribution.
-2. **Three paired trials per factor.** Baseline and treatment are compared by
-   stdout/stderr SHA-256, artifact hashes, exit status, and exact metrics.
-3. **Treatment stability validation.** A treatment cannot be labelled supported
-   merely because it differs from baseline; its own repeated evidence must also
-   be stable.
-4. **Runtime and static localization.** Runtime locations come from intercepted
-   operations and bounded call stacks. AST findings are explicitly labelled
-   heuristic and are never runtime proof.
-5. **Compact audit evidence.** JSON and HTML reports include profile names,
-   hashes, metrics, artifact state, exit status, timeout state, and per-trial
-   baseline/treatment evidence without copying raw program output or secrets.
-
-## Supported factor probes
-
-- `PYTHONHASHSEED` using a fresh interpreter
-- Python's module-level random generator
-- NumPy's legacy generator and unseeded `default_rng()` when NumPy is available
-- Filesystem listing order through supported listing hooks
-- `UTC`, `Asia/Kolkata`, `America/Los_Angeles`, and `Pacific/Kiritimati`
-- An all-released profile for interaction detection
-
-The default verification profile is intentionally **unmasked**: it uses UTC,
+The default verification profile is intentionally unmasked: it uses UTC,
 C.UTF-8, a different hash seed, shuffled listing order, and a minimal declared
 environment, but does not seed Python or NumPy randomness.
 
-## Repairs and verification
-
-P0 suggestions are plain text. P1 adds small LibCST-backed diff-first repairs:
-
-```bash
-uv run --offline causatrace fix path/to/script.py
-uv run --offline causatrace fix path/to/script.py --write
-uv run --offline causatrace verify path/to/script.py --project-root .
-```
-
-`fix` is preview-only by default. `--write` is explicit; failed verification
-returns nonzero and restores the original source. Verification requires five
-successful runs with identical stdout, stderr, and requested artifact hashes.
-
-Additional P1 tools:
+## Additional commands
 
 ```bash
 uv run --offline causatrace pytest --project-root .
@@ -158,10 +141,31 @@ uv run --offline causatrace compare-csv baseline.csv treatment.csv --key id
 uv run --offline causatrace benchmark --project-root .
 ```
 
-## Reproducible Docker check
+These commands support common data and test workflows without requiring a
+service, account, or API key.
 
-The image uses Python 3.12 slim, installs `tzdata` and `make`, and installs the
-locked environment. The default container command is the offline test suite.
+## Reports and configuration
+
+The CLI supports terminal, JSON, and self-contained HTML reports. JSON and HTML
+reports are designed for review and archiving: they contain hashes, metrics,
+factor classifications, source locations, and limitations rather than raw
+program output.
+
+CausaTrace requires no runtime secrets. `.env.example` is included as a safe
+configuration template, and real `.env` files are ignored by Git.
+
+## Reproducible development
+
+The repository pins Python 3.12.8 in `.python-version` and commits `uv.lock`.
+The standard checks are:
+
+```bash
+make test
+make demo
+```
+
+For a clean-machine boundary, build and run the Docker image with networking
+disabled:
 
 ```bash
 docker build -t causatrace .
@@ -171,32 +175,29 @@ docker run --rm --network none causatrace \
   python tests/docker/timezone_probe.py
 ```
 
-The container test must run without downloading or accessing the network. The
-Docker build itself may download its pinned base/build inputs.
+The image uses Python 3.12 slim, installs `tzdata` and `make`, and installs the
+locked environment. The container test runs without network access; the image
+build may download its pinned base and build inputs.
 
-## Design principles
+## Where it fits
 
-CausaTrace treats reproducibility debugging as a controlled experiment:
+CausaTrace complements tools that observe or record known inputs:
 
-- intervention rather than correlation
-- paired trials rather than a single rerun
-- stability checks rather than “changed once” claims
-- explicit uncertainty and interaction states
-- provenance and hashes rather than opaque confidence scores
-- source-level suggestions verified against repeated execution
+- Test frameworks find failures and counterexamples.
+- Experiment trackers record declared parameters, metrics, and runs.
+- Environment capture tools package dependencies and execution context.
 
-It is deliberately an offline Python CLI rather than a cloud service, making
-the result inspectable, reproducible, and usable in restricted research
-environments.
+CausaTrace focuses on the missing step: controlled intervention on hidden
+runtime factors and repeated evidence for the resulting explanation.
 
-## Scope and honest limitations
+## Scope and limitations
 
 - Python scripts and the top-level process are supported. Child-process tracing
   is intentionally unsupported and reported as a limitation.
 - Local analysis is not a network or filesystem security sandbox. Use Docker
-  with `--network none` for the clean-machine boundary.
-- The factor inventory is finite. `factor_not_observed` means “not observed under
-  the tested controls,” not “impossible in all environments.”
+  with `--network none` for a clean-machine boundary.
+- The factor inventory is finite. `factor_not_observed` means “not observed
+  under the tested controls,” not “impossible in all environments.”
 - GPU/CUDA, notebooks, distributed jobs, additional languages, and arbitrary
   third-party RNGs are out of scope.
 - Fixture benchmarks measure planted cases, not real-world accuracy.
@@ -207,7 +208,7 @@ environments.
 src/causatrace/   runner, probes, shim, attribution, reports, fixes
 tests/            unit tests, integration tests, Docker probe, planted fixtures
 Dockerfile        reproducible slim image with tzdata and offline test command
-Makefile          make test and make demo
+Makefile          test, demo, and repository checks
 uv.lock           committed dependency lock
 ```
 
