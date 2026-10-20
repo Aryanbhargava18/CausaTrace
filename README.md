@@ -55,6 +55,9 @@ The offline demo:
 The expected random verification failure is part of the proof: verification is
 not masking nondeterminism with CausaTrace's own seeds.
 
+For one complete acceptance gate, run `make judge`. It runs the offline test
+suite, the causal demo, and the planted-case benchmark; all three must pass.
+
 ## Example result
 
 ```text
