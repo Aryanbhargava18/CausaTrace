@@ -153,6 +153,7 @@ class AnalysisOrchestrator:
             target=relative_target,
             baseline=baseline,
             baseline_repeat=baseline_repeat,
+            baseline_trials=baseline_runs,
             schema_version="1.0",
         )
         if baseline_report.status != "stable_baseline":
@@ -160,6 +161,7 @@ class AnalysisOrchestrator:
                 target=relative_target,
                 baseline=baseline,
                 baseline_repeat=baseline_repeat,
+                baseline_trials=baseline_runs,
                 static_findings=static_findings,
                 limitations=tuple(sorted({item for run in baseline_runs for item in run.limitations})),
                 schema_version="1.0",
@@ -257,6 +259,7 @@ class AnalysisOrchestrator:
             target=relative_target,
             baseline=baseline,
             baseline_repeat=baseline_repeat,
+            baseline_trials=baseline_runs,
             probes=probes,
             static_findings=static_findings,
             limitations=limitations,

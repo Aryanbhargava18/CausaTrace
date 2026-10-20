@@ -289,6 +289,7 @@ class Attributor:
         target: str,
         baseline: RunResult | None,
         baseline_repeat: RunResult | None = None,
+        baseline_trials: Iterable[RunResult] | None = None,
         probes: Iterable[ProbeResult] = (),
         static_findings: Iterable[StaticFinding] = (),
         limitations: Iterable[str] = (),
@@ -298,14 +299,20 @@ class Attributor:
 
         probe_values = tuple(probes)
         report_limitations = list(limitations)
+        all_baselines = tuple(baseline_trials or ())
+        baseline_stable = (
+            baseline_is_stable(all_baselines, comparator=self.comparator)
+            if all_baselines
+            else _baseline_repeat_is_stable(
+                baseline,
+                baseline_repeat,
+                comparator=self.comparator,
+            )
+        )
         if baseline is None or not _run_succeeded(baseline):
             status = INCONCLUSIVE
             report_limitations.append("No successful baseline run is available.")
-        elif not _baseline_repeat_is_stable(
-            baseline,
-            baseline_repeat,
-            comparator=self.comparator,
-        ):
+        elif not baseline_stable:
             status = BASELINE_UNSTABLE
             report_limitations.append(_BASELINE_LIMITATION)
             # Keep the observed comparison evidence, but do not publish a
@@ -329,6 +336,7 @@ class Attributor:
             status=status,
             baseline=baseline,
             baseline_repeat=baseline_repeat,
+            baseline_trials=all_baselines,
             probes=probe_values,
             static_findings=tuple(static_findings),
             limitations=_aggregate_limitations(report_limitations),

@@ -108,6 +108,7 @@ class AnalysisReport:
     status: str
     baseline: RunResult | None = None
     baseline_repeat: RunResult | None = None
+    baseline_trials: tuple[RunResult, ...] = ()
     probes: tuple[ProbeResult, ...] = ()
     static_findings: tuple[StaticFinding, ...] = ()
     limitations: tuple[str, ...] = ()

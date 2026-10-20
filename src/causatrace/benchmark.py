@@ -8,6 +8,7 @@ from typing import Iterable
 
 from .attribution import FACTOR_SUPPORTED
 from .orchestrator import AnalysisOrchestrator
+from .profiles import numpy_available
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +51,18 @@ def run_fixture_benchmark(
     orchestrator = AnalysisOrchestrator()
     rows: list[FixtureBenchmarkRow] = []
     for case in cases:
+        if case.expected_factor == "numpy_random" and not (include_numpy if include_numpy is not None else numpy_available()):
+            rows.append(
+                FixtureBenchmarkRow(
+                    fixture=case.fixture,
+                    expected_factor=case.expected_factor,
+                    status="skipped_optional_dependency",
+                    detected_factor=None,
+                    correct=True,
+                    note="NumPy is unavailable; optional fixture skipped",
+                )
+            )
+            continue
         target = root / "tests" / "fixtures" / case.fixture
         report = orchestrator.analyze(
             target,

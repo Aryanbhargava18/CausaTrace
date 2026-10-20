@@ -48,7 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
     fix = commands.add_parser("fix", help="preview safe reproducibility repairs")
     fix.add_argument("target", type=Path)
     fix.add_argument("--write", action="store_true", help="apply the displayed diff")
-    fix.add_argument("--verify", action="store_true", help="run five exact-hash checks after --write")
+    fix.add_argument("--verify", action="store_true", help="deprecated; --write verifies automatically")
     fix.add_argument("--clean-machine", action="store_true", help="verify with the clean-machine profile")
 
     verify = commands.add_parser("verify", help="verify five identical output hashes")
@@ -123,7 +123,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             parsed.target.write_text(preview.transformed_source, encoding="utf-8")
             print(f"Wrote {parsed.target}.")
-            if parsed.verify:
+            if parsed.write or parsed.verify:
                 root = parsed.target.resolve().parent
                 request = RunRequest(target=parsed.target.name, project_root=str(root))
                 result = verify_five_runs(

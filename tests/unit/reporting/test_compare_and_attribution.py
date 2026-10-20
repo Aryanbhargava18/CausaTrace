@@ -81,6 +81,18 @@ def test_unstable_baseline_protects_probe_and_report_status() -> None:
     assert "Baseline repeats" in " ".join(report.limitations)
 
 
+def test_all_baseline_trials_are_checked_not_only_the_first_repeat() -> None:
+    baselines = [result("same"), result("same"), result("late-change")]
+    report = Attributor().analyze(
+        target="program.py",
+        baseline=baselines[0],
+        baseline_repeat=baselines[1],
+        baseline_trials=baselines,
+    )
+
+    assert report.status == BASELINE_UNSTABLE
+
+
 def test_terminal_and_json_keep_static_findings_separate_and_deterministic() -> None:
     probe = ProbeResult(
         factor="random",
