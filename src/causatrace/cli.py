@@ -63,7 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--project-root", type=Path, default=Path("."))
     benchmark.add_argument("--format", choices=("terminal", "json"), default="terminal")
 
-    demo = commands.add_parser("demo", help="run the offline evaluator demonstration")
+    demo = commands.add_parser("demo", help="run the offline demonstration")
     demo.add_argument("--project-root", type=Path, default=Path("."))
 
     junit = commands.add_parser("junit", help="parse an existing JUnit XML result")

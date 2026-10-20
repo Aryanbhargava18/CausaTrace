@@ -2,7 +2,7 @@
 
 > **An evidence-first causal reproducibility debugger for Python experiments.**
 
-[![Judge gate](https://github.com/Aryanbhargava18/CausaTrace/actions/workflows/ci.yml/badge.svg)](https://github.com/Aryanbhargava18/CausaTrace/actions/workflows/ci.yml)
+[![CI](https://github.com/Aryanbhargava18/CausaTrace/actions/workflows/ci.yml/badge.svg)](https://github.com/Aryanbhargava18/CausaTrace/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/Aryanbhargava18/CausaTrace)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.12.8-3776AB?logo=python&logoColor=white)](.python-version)
 
@@ -40,19 +40,7 @@ The project does not claim universal causal inference. It claims a narrower,
 testable result: changing factor **F** under a declared protocol repeatedly
 changed output **O**, with the effect and limitations recorded in the report.
 
-### Buildathon positioning
-
-The strongest public buildathon-adjacent projects we reviewed solve nearby but
-different problems: [Flaky Tests Hunter](https://github.com/hanabif/Omnirush-Flaky-test-hunter)
-repeats tests in Docker and classifies flakiness; [OmniResilience](https://github.com/potlasrisharan/ominirush-Immune)
-breaks and heals a vulnerable service; [FaultLine](https://github.com/Khu885/FaultLine)
-arbitrates AI repair patches; and [Repro Doctor](https://github.com/Xombi17/repro-doctor)
-repairs reproducibility artifacts. CausaTrace occupies the narrower research
-gap between them: it performs controlled runtime interventions to identify a
-tested hidden factor before proposing a repair. Its claim is intentionally
-smaller, more falsifiable, and easier to audit.
-
-## 30-second evaluator demo
+## Quick demo
 
 From a clean checkout:
 
@@ -71,8 +59,8 @@ The offline demo:
 The expected random verification failure is part of the proof: verification is
 not masking nondeterminism with CausaTrace's own seeds.
 
-For one complete acceptance gate, run `make judge`. It runs the offline test
-suite, the causal demo, and the planted-case benchmark; all three must pass.
+For the complete local check, run `make judge`. It runs the offline test suite,
+the causal demo, and the planted-case benchmark; all three must pass.
 
 ## Example result
 
@@ -186,7 +174,7 @@ docker run --rm --network none causatrace \
 The container test must run without downloading or accessing the network. The
 Docker build itself may download its pinned base/build inputs.
 
-## Why it fits Research, Data & Scientific Computing
+## Design principles
 
 CausaTrace treats reproducibility debugging as a controlled experiment:
 
@@ -200,14 +188,6 @@ CausaTrace treats reproducibility debugging as a controlled experiment:
 It is deliberately an offline Python CLI rather than a cloud service, making
 the result inspectable, reproducible, and usable in restricted research
 environments.
-
-## Built with OmniRush
-
-OmniRush was used during development for parallel role-based implementation and
-adversarial review: runner/shim, locator/static rules, attribution/reporting,
-fixtures/tests, and red-team evaluation were developed and checked as separate
-workstreams. The shipped product intentionally has no runtime LLM, API key, or
-network dependency, so an evaluator can reproduce the evidence locally.
 
 ## Scope and honest limitations
 

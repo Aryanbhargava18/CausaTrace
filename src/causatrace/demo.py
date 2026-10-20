@@ -1,4 +1,4 @@
-"""Deterministic, offline evaluator demo for the shipped planted fixtures."""
+"""Deterministic, offline demonstration for the shipped planted fixtures."""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ def run_demo(project_root: str | Path) -> int:
     clean_verification = verify_five_runs(clean_request)
     random_verification = verify_five_runs(random_request)
 
-    print("CausaTrace evaluator demo")
+    print("CausaTrace offline demo")
     print("=" * 28)
     print("1. Controlled causal intervention")
     print(render_terminal(causal_report), end="")
