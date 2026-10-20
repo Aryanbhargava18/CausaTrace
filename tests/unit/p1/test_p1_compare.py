@@ -125,4 +125,5 @@ def test_analysis_html_report_contains_inline_variance_chart() -> None:
     assert "Factor consistency" in html
     assert "<svg" in html
     assert "hash_seed: seed=1" in html
+    assert "Numeric variance" in html
     assert "Machine-readable snapshot" in html

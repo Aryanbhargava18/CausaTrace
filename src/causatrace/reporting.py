@@ -181,6 +181,11 @@ def render_html(report: AnalysisReport) -> str:
     probes = sorted(report.probes, key=_probe_key)
     rows: list[str] = []
     bars: list[str] = []
+    variance_values = [
+        (probe, probe.comparison.max_absolute_difference)
+        for probe in probes
+        if probe.comparison is not None and probe.comparison.max_absolute_difference is not None
+    ]
     for index, probe in enumerate(probes):
         css = _html_status_class(probe.classification)
         label = escape(f"{probe.factor}: {probe.treatment}")
@@ -210,6 +215,25 @@ def render_html(report: AnalysisReport) -> str:
     ) or "<li>None</li>"
     table = "".join(rows) or "<tr><td colspan='5'>No factor probes ran.</td></tr>"
     chart_width = max(360, 40 + len(probes) * 150)
+    if variance_values:
+        maximum = max(value for _probe, value in variance_values) or 1.0
+        variance_bars: list[str] = []
+        for index, (probe, value) in enumerate(variance_values):
+            x = 20 + index * 150
+            height = max(2, int(120 * value / maximum))
+            y = 150 - height
+            label = escape(f"{probe.factor}: {probe.treatment}")
+            variance_bars.append(
+                f"<rect class='{_html_status_class(probe.classification)}' x='{x}' y='{y}' width='100' height='{height}'>"
+                f"<title>{label}: {value:g}</title></rect>"
+            )
+            variance_bars.append(f"<text x='{x}' y='170'>{escape(probe.factor[:18])}</text>")
+        variance_chart = (
+            f"<svg role='img' aria-label='Numeric variance chart' width='{max(360, 40 + len(variance_values) * 150)}' height='190' viewBox='0 0 {max(360, 40 + len(variance_values) * 150)} 190'>"
+            f"<line x1='10' y1='150' x2='{max(350, 30 + len(variance_values) * 150)}' y2='150' stroke='#8993a4'/>{''.join(variance_bars)}</svg>"
+        )
+    else:
+        variance_chart = "<p>No numeric metric variance was captured for these probes.</p>"
     return f"""<!doctype html>
 <html lang='en'>
 <head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
@@ -228,6 +252,7 @@ code,pre{{font-family:ui-monospace,SFMono-Regular,monospace}}section{{margin:2re
 <svg role='img' aria-label='Factor consistency chart' width='{chart_width}' height='190' viewBox='0 0 {chart_width} 190'>
 <line x1='10' y1='150' x2='{chart_width - 10}' y2='150' stroke='#8993a4'/>
 {''.join(bars)}</svg></section>
+<section><h2>Numeric variance</h2>{variance_chart}</section>
 <section><h2>Runtime factor attribution</h2><table><thead><tr><th>Factor</th><th>Classification</th><th>Changed</th><th>Consistency</th><th>Evidence</th></tr></thead>
 <tbody>{table}</tbody></table></section>
 <section><h2>Static findings (not runtime proof)</h2><ul>{findings}</ul></section>
