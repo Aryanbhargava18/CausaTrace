@@ -10,7 +10,7 @@ import sys
 import tempfile
 from typing import Sequence
 
-from .p1_compare import JUnitReport, parse_junit_xml
+from .artifact_comparison import JUnitReport, parse_junit_xml
 from .profiles import baseline_profile, build_environment
 
 

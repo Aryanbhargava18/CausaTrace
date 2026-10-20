@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_buildathon_reproducibility_contract_is_checked_in() -> None:
+def test_repository_reproducibility_contract_is_checked_in() -> None:
     required = (
         ".python-version",
         "uv.lock",

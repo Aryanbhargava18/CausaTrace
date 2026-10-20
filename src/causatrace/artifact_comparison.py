@@ -1,10 +1,10 @@
-"""Small, dependency-free helpers for CausaTrace P1 evaluations.
+"""Small, dependency-free helpers for structured artifact comparisons.
 
-P0's :class:`causatrace.compare.ExactComparator` intentionally remains an
-exact, hash-based comparison.  This module is an opt-in evaluation layer for
-artifacts which are naturally compared with tolerances or structured parsers.
-It has no dependency on the runner, orchestrator, CLI, or P0 models so it can
-also be used by an evaluation script on its own.
+:class:`causatrace.compare.ExactComparator` intentionally remains an exact,
+hash-based comparison. This module is an opt-in comparison layer for artifacts
+which are naturally compared with tolerances or structured parsers. It has no
+dependency on the runner, orchestrator, CLI, or core models, so it can also be
+used by an analysis script on its own.
 
 The CSV and JUnit readers accept either text/bytes, file-like objects, or
 ``pathlib.Path`` instances.  All parsing is performed with the Python
@@ -619,9 +619,9 @@ class HTMLReportSection:
 
 @dataclass(frozen=True, slots=True)
 class HTMLReport:
-    """Self-contained HTML report data model for P1 evaluation output."""
+    """Self-contained HTML report data model for comparison output."""
 
-    title: str = "CausaTrace P1 evaluation"
+    title: str = "CausaTrace comparison report"
     sections: tuple[HTMLReportSection, ...] = field(default_factory=tuple)
 
     def render(self) -> str:
@@ -644,7 +644,7 @@ class HTMLReport:
 def render_html_report(
     report: HTMLReport | Iterable[HTMLReportSection],
     *,
-    title: str = "CausaTrace P1 evaluation",
+    title: str = "CausaTrace comparison report",
 ) -> str:
     """Render an isolated HTML report and escape all caller-provided text."""
 

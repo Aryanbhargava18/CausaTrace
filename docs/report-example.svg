@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
+  <title id="title">CausaTrace model accuracy report</title>
+  <desc id="desc">A report snapshot showing stable baseline evidence and supported hash seed and filesystem listing factors for the order-sensitive centroid classifier.</desc>
+  <rect width="1200" height="720" fill="#101827"/>
+  <rect x="28" y="24" width="1144" height="672" rx="18" fill="#172235" stroke="#33445f"/>
+  <text x="64" y="78" fill="#f8fafc" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="28" font-weight="700">CausaTrace report</text>
+  <text x="64" y="112" fill="#9fb0c8" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="16">examples/model_accuracy.py · stable_baseline</text>
+  <rect x="64" y="142" width="1072" height="82" rx="12" fill="#1d2e45"/>
+  <text x="88" y="174" fill="#9fb0c8" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14">CONTROLLED RESULT</text>
+  <text x="88" y="205" fill="#f8fafc" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="20">accuracy=0.75  ·  train_records=4  ·  test_records=4</text>
+  <rect x="64" y="250" width="1072" height="74" rx="12" fill="#153c35" stroke="#2b806d"/>
+  <circle cx="94" cy="287" r="10" fill="#5eead4"/>
+  <text x="120" y="283" fill="#ccfbf1" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="18" font-weight="700">filesystem_listing</text>
+  <text x="120" y="307" fill="#9fe8da" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15">factor_supported · treatment accuracy=1.00 · runtime line 18</text>
+  <rect x="64" y="340" width="1072" height="74" rx="12" fill="#153c35" stroke="#2b806d"/>
+  <circle cx="94" cy="377" r="10" fill="#5eead4"/>
+  <text x="120" y="373" fill="#ccfbf1" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="18" font-weight="700">hash_seed</text>
+  <text x="120" y="397" fill="#9fe8da" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15">factor_supported · treatment accuracy=0.25 · runtime line 18 · heuristic line 50</text>
+  <rect x="64" y="430" width="1072" height="74" rx="12" fill="#3d2d17" stroke="#a87935"/>
+  <circle cx="94" cy="467" r="10" fill="#fbbf24"/>
+  <text x="120" y="463" fill="#fef3c7" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="18" font-weight="700">all_released</text>
+  <text x="120" y="487" fill="#f5d38b" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15">interaction_suspected · treatment accuracy=0.50</text>
+  <rect x="64" y="536" width="1072" height="112" rx="12" fill="#1d2e45"/>
+  <text x="88" y="570" fill="#9fb0c8" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14">EVIDENCE</text>
+  <text x="88" y="598" fill="#e2e8f0" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="16">3/3 consistent paired trials · stdout SHA-256 · top-level runtime tracing</text>
+  <text x="88" y="626" fill="#9fb0c8" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="15">Static findings remain heuristic; child-process tracing is outside the boundary.</text>
+</svg>

@@ -12,7 +12,7 @@ from .demo import run_demo
 from .fixes import preview_fixes
 from .models import ArtifactSpec
 from .orchestrator import AnalysisError, AnalysisOrchestrator
-from .p1_compare import compare_csv_files, parse_junit_xml
+from .artifact_comparison import compare_csv_files, parse_junit_xml
 from .pytest_support import run_pytest
 from .reporting import render_html, render_json, render_terminal
 from .verification import clean_machine_profile, verify_five_runs
@@ -70,7 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
     junit.add_argument("path", type=Path)
     junit.add_argument("--format", choices=("terminal", "json"), default="terminal")
 
-    csv_compare = commands.add_parser("compare-csv", help="compare two CSV artifacts with P1 tolerances")
+    csv_compare = commands.add_parser("compare-csv", help="compare two CSV artifacts with tolerances")
     csv_compare.add_argument("baseline", type=Path)
     csv_compare.add_argument("treatment", type=Path)
     csv_compare.add_argument("--key", action="append", default=[], help="header column used to align rows")
@@ -129,7 +129,7 @@ def main(argv: list[str] | None = None) -> int:
             if preview.unified_diff:
                 print(preview.unified_diff, end="")
             else:
-                print("No safe P1 repair was identified.")
+                print("No safe repair was identified.")
             if not parsed.write:
                 print("Preview only; no files were modified.", file=sys.stderr)
                 return 0

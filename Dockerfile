@@ -16,6 +16,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock .python-version README.md LICENSE Dockerfile Makefile .env.example ./
 COPY src ./src
 COPY tests ./tests
+COPY examples ./examples
 
 RUN uv sync --locked --all-groups
 

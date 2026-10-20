@@ -44,6 +44,12 @@ Run the included demonstration:
 make demo
 ```
 
+Run the realistic offline data-science example:
+
+```bash
+make example
+```
+
 The demonstration uses a small set-order experiment. It changes
 `PYTHONHASHSEED` in controlled trials, identifies the resulting output change,
 shows the source location, verifies a stable control, and deliberately rejects
@@ -56,29 +62,63 @@ Run the test suite:
 make test
 ```
 
-## Typical workflow
+## Offline model-accuracy example
 
-Analyze a Python script and choose a report format:
+`examples/model_accuracy.py` is a small but realistic failure mode for a data
+science workflow. It loads labelled records from eight CSV files, uses the
+first half as training data, fits a nearest-centroid classifier, and reports
+test accuracy. The script contains two hidden assumptions:
+
+- `os.listdir()` defines the train/test split, so filesystem order changes
+  which records become training data.
+- A tied prediction chooses the first label from a set, so `PYTHONHASHSEED`
+  changes a model decision.
+
+The example is intentionally dependency-light and offline. CausaTrace observes
+both causes instead of treating a changed accuracy number as an unexplained
+model problem:
+
+```text
+baseline:            accuracy=0.75
+hash_seed treatment:  accuracy=0.25
+listing treatment:    accuracy=1.00
+all_released:         accuracy=0.50
+```
+
+Run the full controlled analysis yourself:
 
 ```bash
-uv run --offline causatrace analyze path/to/script.py --project-root .
-uv run --offline causatrace analyze path/to/script.py --format json > report.json
-uv run --offline causatrace analyze path/to/script.py --format html --output report.html
+uv run --offline causatrace analyze examples/model_accuracy.py --project-root .
+```
+
+## Typical workflow
+
+Analyze the checked-in model-accuracy example and choose a report format:
+
+```bash
+uv run --offline causatrace analyze examples/model_accuracy.py --project-root . \
+  --metric-regex 'accuracy=(?P<accuracy>[0-9.]+)'
+uv run --offline causatrace analyze examples/model_accuracy.py --format json \
+  --metric-regex 'accuracy=(?P<accuracy>[0-9.]+)' > /tmp/report.json
+uv run --offline causatrace analyze examples/model_accuracy.py --format html \
+  --metric-regex 'accuracy=(?P<accuracy>[0-9.]+)' --output /tmp/report.html
 ```
 
 Pass arguments to the target after `--`:
 
 ```bash
-uv run --offline causatrace analyze path/to/script.py \
-  --project-root . -- input.csv
+uv run --offline causatrace analyze examples/model_accuracy.py \
+  --project-root . --metric-regex 'accuracy=(?P<accuracy>[0-9.]+)' -- input.csv
 ```
 
 Preview a repair, apply it explicitly, then verify the result:
 
 ```bash
-uv run --offline causatrace fix path/to/script.py
-uv run --offline causatrace fix path/to/script.py --write
-uv run --offline causatrace verify path/to/script.py --project-root .
+WORK="$(mktemp -d)"
+cp tests/fixtures/hash_dependent_set.py "$WORK/unstable.py"
+uv run --offline causatrace fix "$WORK/unstable.py" --project-root "$WORK"
+uv run --offline causatrace fix "$WORK/unstable.py" --project-root "$WORK" --write
+uv run --offline causatrace verify "$WORK/unstable.py" --project-root "$WORK"
 ```
 
 `fix` is preview-only by default. `--write` is explicit; if verification fails,
@@ -106,15 +146,56 @@ The result is deliberately narrow: changing factor **F** under the declared
 protocol repeatedly changed output **O**. It is not a claim of universal causal
 inference or a guarantee that untested factors are safe.
 
-## Example result
+## Actual CausaTrace result
 
 ```text
-hash_seed [baseline:hash_seed]: factor_supported
-Evidence: stdout SHA-256
-Runtime location: tests/fixtures/hash_dependent_set.py:4
+CausaTrace report
+Target: examples/model_accuracy.py
+Status: stable_baseline
 
-clean control: PASS (1 output hash)
-unrepaired random script: EXPECTED FAIL (5 output hashes)
+filesystem_listing [baseline:filesystem_listing]: factor_supported
+Evidence: stdout SHA-256; metrics=accuracy; max metric Δ=0.25
+Runtime location: examples/model_accuracy.py:18 (runtime_user, os.listdir)
+
+hash_seed [baseline:hash_seed]: factor_supported
+Evidence: stdout SHA-256; metrics=accuracy; max metric Δ=0.5
+Runtime location: examples/model_accuracy.py:18 (runtime_user, os.listdir)
+Static heuristic: examples/model_accuracy.py:50 (unordered set tie-break)
+
+baseline accuracy=0.75
+filesystem-listing treatment accuracy=1.00
+hash-seed treatment accuracy=0.25
+all-released interaction accuracy=0.50
+```
+
+The report also labels the `os.listdir()` and set-comprehension findings as
+heuristics, while the repeated output changes are runtime evidence.
+
+## Flaky pytest example
+
+The repository includes a minimal test that assumes a stable set order. The
+same test passes with one interpreter seed and fails with another:
+
+```bash
+PYTHONHASHSEED=0 uv run --offline pytest examples/flaky_pytest/test_order.py -q
+# 1 passed
+
+PYTHONHASHSEED=1 uv run --offline pytest examples/flaky_pytest/test_order.py -q
+# 1 failed
+```
+
+The failure points to the assumption directly:
+
+```text
+examples/flaky_pytest/test_order.py:6: AssertionError
+E       AssertionError: assert ('dog', 'cat') == ('cat', 'dog')
+```
+
+Run CausaTrace against the test file to see the factor and source finding:
+
+```bash
+uv run --offline causatrace analyze \
+  examples/flaky_pytest/test_order.py --project-root .
 ```
 
 ## Supported factors
@@ -136,13 +217,40 @@ environment, but does not seed Python or NumPy randomness.
 
 ```bash
 uv run --offline causatrace pytest --project-root .
-uv run --offline causatrace junit results.xml --format json
-uv run --offline causatrace compare-csv baseline.csv treatment.csv --key id
+uv run --offline pytest tests/integration/test_examples.py --junitxml=/tmp/causatrace-results.xml
+uv run --offline causatrace junit /tmp/causatrace-results.xml --format json
+uv run --offline causatrace compare-csv tests/fixtures/csv/baseline.csv tests/fixtures/csv/treatment.csv --key id
 uv run --offline causatrace benchmark --project-root .
 ```
 
 These commands support common data and test workflows without requiring a
 service, account, or API key.
+
+## Planted-fixture benchmark
+
+The included benchmark covers eight deterministic cases: a clean control,
+Python random, NumPy `default_rng()`, hash-dependent sets, filesystem listing,
+timezone, environment variables, and an intentionally unstable baseline. Run
+it with:
+
+```bash
+uv run --offline causatrace benchmark --project-root .
+```
+
+The current result is:
+
+```text
+[PASS] clean_control.py: expected=none, detected=none
+[PASS] unseeded_python_random.py: expected=python_random, detected=python_random
+[PASS] numpy_default_rng.py: expected=numpy_random, detected=numpy_random
+[PASS] hash_dependent_set.py: expected=hash_seed, detected=hash_seed
+[PASS] filesystem_listing.py: expected=filesystem_listing, detected=filesystem_listing
+[PASS] timezone_date.py: expected=timezone, detected=timezone
+[PASS] environment_variable.py: expected=none, detected=none
+[PASS] baseline_flaky.py: expected=none, detected=none, status=baseline_unstable
+
+Fixture cases passed: 8/8
+```
 
 ## Reports and configuration
 
@@ -150,6 +258,18 @@ The CLI supports terminal, JSON, and self-contained HTML reports. JSON and HTML
 reports are designed for review and archiving: they contain hashes, metrics,
 factor classifications, source locations, and limitations rather than raw
 program output.
+
+![CausaTrace report snapshot](docs/report-example.svg)
+
+The snapshot above reflects the checked-in model-accuracy example and shows the
+two supported factors, their observed accuracy changes, and the interaction
+profile. Generate a full HTML report locally with:
+
+```bash
+uv run --offline causatrace analyze examples/model_accuracy.py \
+  --project-root . --format html --metric-regex 'accuracy=(?P<accuracy>[0-9.]+)' \
+  --output /tmp/causatrace-report.html
+```
 
 CausaTrace requires no runtime secrets. `.env.example` is included as a safe
 configuration template, and real `.env` files are ignored by Git.
@@ -190,11 +310,43 @@ docker run --rm --network none causatrace:0.1.0 make test
 docker run --rm --network none \
   -v "$PWD:/workspace:ro" -w /workspace \
   causatrace:0.1.0 \
-  causatrace analyze path/to/script.py --project-root /workspace
+  causatrace analyze examples/model_accuracy.py --project-root /workspace
 ```
 
 Build the image in a connected environment, then run it with `--network none`
 in a worker or CI job when the analysis must be isolated from the network.
+
+## Development provenance
+
+The implementation was developed in OmniRush using four focused parallel
+sessions with explicit file ownership. Each session was checked offline before
+its milestone commit; later integration work was reviewed and tested on the
+combined tree.
+
+| OmniRush session | Owned implementation area | Milestone evidence |
+|---|---|---|
+| **Runner and shim (@general subagent)** | `runner.py`, `shim.py`, `boot.py`, `profiles.py`, `capture.py`, compatibility exports, and `tests/unit/runner/` | `348c649`; focused runner suite: 6 passed; full suite at that point: 7 passed |
+| **Locator and static rules (@general subagent)** | `locator.py` and `tests/unit/locator/` | `9cb54f0`; focused locator suite: 3 passed; full suite at that point: 10 passed |
+| **Attribution and reporting (@general subagent)** | `compare.py`, `attribution.py`, `reporting.py`, and `tests/unit/reporting/` | `eacf40f`; focused reporting suite: 4 passed; full suite at that point: 14 passed |
+| **Fixtures and tests (@general subagent)** | `tests/fixtures/`, listing data, and `tests/integration/test_fixtures.py` | `d305bca`; fixture suite: 8 passed; full suite at that point: 22 passed |
+
+The integration path then added orchestration, repairs, verification, reports,
+the benchmark, and the reproducibility contract. Milestone commits include
+`4abace0` for verification evidence, `b3b9183` for reproducibility compliance,
+`5b69749` for the final Docker contract fix, and the current CI workflow runs
+the locked environment before the offline checks.
+
+Final verification is reproducible from a clean checkout:
+
+```bash
+uv sync --locked --all-groups
+make judge
+```
+
+The last clean-clone Docker verification used a no-cache image build,
+`docker run --network none` for the test suite and demo, the model-accuracy
+analysis from a read-only workspace mount, and the timezone probe. It produced
+**58 passed**, a successful demo and model report, and `timezone data available`.
 
 ## Where it fits
 
@@ -222,10 +374,12 @@ runtime factors and repeated evidence for the resulting explanation.
 ## Project layout
 
 ```text
-src/causatrace/   runner, probes, shim, attribution, reports, fixes
+src/causatrace/   runner, probes, attribution, reports, fixes, comparisons
+examples/         offline model-accuracy and flaky-pytest examples
 tests/            unit tests, integration tests, Docker probe, planted fixtures
+docs/             report snapshot used in this README
 Dockerfile        reproducible slim image with tzdata and offline test command
-Makefile          test, demo, and repository checks
+Makefile          test, demo, example, and repository checks
 uv.lock           committed dependency lock
 ```
 

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from causatrace.p1_compare import (
+from causatrace.artifact_comparison import (
     NumericTolerance,
     compare_csv_text,
     compare_numeric,
@@ -88,11 +88,11 @@ def test_junit_parser_handles_failure_error_skip_and_namespaces(tmp_path: Path) 
 def test_html_report_is_self_contained_and_escapes_text() -> None:
     html = render_html_report(
         [HTMLReportSection("<title>", "<unsafe>&")],
-        title="CausaTrace <P1>",
+        title="CausaTrace comparison",
     )
 
     assert "<!doctype html>" in html
-    assert "CausaTrace &lt;P1&gt;" in html
+    assert "CausaTrace comparison" in html
     assert "&lt;unsafe&gt;&amp;" in html
     assert "http" not in html
 

@@ -1,7 +1,7 @@
-"""Diff-first, source-preserving P1 repair previews.
+"""Diff-first, source-preserving repair previews.
 
 The P0 locator deliberately reports plain-text suggestions.  This module is
-the opt-in P1 layer for a small set of repairs that have an unambiguous source
+the opt-in repair layer for a small set of repairs that have an unambiguous source
 rewrite.  It accepts source text and returns a preview; it never opens or
 writes a source file.
 
@@ -438,7 +438,7 @@ def _cst_parts(node: cst.CSTNode) -> tuple[str, ...]:
 
 
 class _CSTRepairTransformer(cst.CSTTransformer):
-    """Small, syntax-aware codemod set used by the P1 preview."""
+    """Small, syntax-aware codemod set used by the repair preview."""
 
     def __init__(self) -> None:
         self.os_modules: set[str] = set()
