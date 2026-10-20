@@ -8,6 +8,7 @@ import sys
 
 from . import __version__
 from .benchmark import render_benchmark_terminal, run_fixture_benchmark
+from .demo import run_demo
 from .fixes import preview_fixes
 from .models import ArtifactSpec
 from .orchestrator import AnalysisError, AnalysisOrchestrator
@@ -61,6 +62,9 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark = commands.add_parser("benchmark", help="run the planted fixture benchmark")
     benchmark.add_argument("--project-root", type=Path, default=Path("."))
     benchmark.add_argument("--format", choices=("terminal", "json"), default="terminal")
+
+    demo = commands.add_parser("demo", help="run the offline evaluator demonstration")
+    demo.add_argument("--project-root", type=Path, default=Path("."))
 
     junit = commands.add_parser("junit", help="parse an existing JUnit XML result")
     junit.add_argument("path", type=Path)
@@ -184,6 +188,9 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print(render_benchmark_terminal(rows), end="")
             return 0 if all(row.correct for row in rows) else 1
+
+        if parsed.command == "demo":
+            return run_demo(parsed.project_root)
 
         if parsed.command == "junit":
             result = parse_junit_xml(parsed.path)

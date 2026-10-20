@@ -5,6 +5,20 @@ changes its output across runs or machines. It establishes a pinned baseline,
 changes one tested factor at a time, compares outputs, records supported source
 locations, and reports only evidence-backed findings.
 
+## Evaluator quickstart
+
+The fastest way to see the core claim is one offline command:
+
+```bash
+make demo
+```
+
+The demo shows a real set-order output change, identifies `PYTHONHASHSEED` as
+the tested factor, reports the source location, proves a clean control across
+five runs, and deliberately rejects an unrepaired random script. A successful
+demo exits zero; the random script's expected verification failure is part of
+the proof that verification is not masking nondeterminism.
+
 ## Development setup
 
 Python 3.12.8 and `uv` are required. The lockfile is committed so dependency
@@ -47,6 +61,7 @@ uv run --offline causatrace verify path/to/script.py --project-root .
 uv run --offline causatrace fix path/to/script.py
 uv run --offline causatrace pytest --project-root .
 uv run --offline causatrace benchmark --project-root .
+uv run --offline causatrace demo --project-root .
 ```
 
 Optional artifact hashes and numeric stream metrics can be requested with
