@@ -2,6 +2,10 @@
 
 > **An evidence-first causal reproducibility debugger for Python experiments.**
 
+[![Judge gate](https://github.com/Aryanbhargava18/CausaTrace/actions/workflows/ci.yml/badge.svg)](https://github.com/Aryanbhargava18/CausaTrace/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/Aryanbhargava18/CausaTrace)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.12.8-3776AB?logo=python&logoColor=white)](.python-version)
+
 CausaTrace answers the question ordinary “run it again” debugging cannot:
 
 > **Which tested hidden factor changed my program's result, where did it enter the execution, and did the repair actually restore reproducibility?**
