@@ -346,7 +346,7 @@ make judge
 The last clean-clone Docker verification used a no-cache image build,
 `docker run --network none` for the test suite and demo, the model-accuracy
 analysis from a read-only workspace mount, and the timezone probe. It produced
-**58 passed**, a successful demo and model report, and `timezone data available`.
+**59 passed**, a successful demo and model report, and `timezone data available`.
 
 ## Where it fits
 

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
+import subprocess
+import sys
 
 from causatrace.models import RunRequest
 from causatrace.profiles import baseline_profile, profiles_for_factor
@@ -30,3 +33,16 @@ def test_model_accuracy_example_exposes_order_and_seed_causes() -> None:
     assert _accuracy(baseline_result.stdout) == "0.75"
     assert _accuracy(hash_result.stdout) == "0.25"
     assert _accuracy(listing_result.stdout) == "1.00"
+
+
+def test_flaky_pytest_example_reproduces_seed_specific_failure_line() -> None:
+    command = (sys.executable, "-m", "pytest", "examples/flaky_pytest/test_order.py", "-q")
+    passing_environment = {**os.environ, "PYTHONHASHSEED": "0"}
+    failing_environment = {**os.environ, "PYTHONHASHSEED": "1"}
+
+    passing = subprocess.run(command, cwd=ROOT, env=passing_environment, capture_output=True, text=True)
+    failing = subprocess.run(command, cwd=ROOT, env=failing_environment, capture_output=True, text=True)
+
+    assert passing.returncode == 0
+    assert failing.returncode == 1
+    assert "examples/flaky_pytest/test_order.py:6" in failing.stdout + failing.stderr
