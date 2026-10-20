@@ -42,6 +42,11 @@ interactions, and inconclusive experiments.
 ```bash
 uv run --offline causatrace analyze path/to/script.py --project-root .
 uv run --offline causatrace analyze path/to/script.py --format json > report.json
+uv run --offline causatrace analyze path/to/script.py --format html --output report.html
+uv run --offline causatrace verify path/to/script.py --project-root . --clean-machine
+uv run --offline causatrace fix path/to/script.py
+uv run --offline causatrace pytest --project-root .
+uv run --offline causatrace benchmark --project-root .
 ```
 
 Optional artifact hashes and numeric stream metrics can be requested with
@@ -75,15 +80,23 @@ frame is in the target project.
 - Runtime locations are limited to supported intercepted operations and the
   first relevant user-code frame. Standard-library and C-extension frames are
   kept distinct.
-- P0 repair output is plain-text guidance and diff-like suggestions only.
-  `libcst` codemods and verified writes are P1 work. Source files are never
-  modified unless an explicit write workflow is implemented and requested.
+- P0 repair output is plain-text guidance and diff-like suggestions only. P1
+  adds a small LibCST-backed codemod set. `causatrace fix` is preview-only by
+  default; source files are modified only with explicit `--write`.
+- P1 verification requires five successful runs with identical stdout, stderr,
+  and artifact hashes. The clean-machine profile uses UTC, C.UTF-8, a different
+  hash seed, shuffled listing order, and a minimal declared environment; it
+  intentionally does not seed Python or NumPy randomness.
+- P1 CSV and JUnit support are explicit tooling commands. Numeric comparisons
+  use opt-in absolute and relative tolerances; P0 causal classifications remain
+  exact-hash based.
 - Local execution does not promise network isolation. The external Docker
   verification with `--network none` is the clean-machine security boundary.
 - Fixture benchmarks measure planted cases, not real-world accuracy.
 
 ## Project status
 
-P0 is the release target. P1 includes pytest/JUnit support, tolerances, CSV
-comparisons, verified fixes, clean-machine profiles, HTML reports, and the
-fixture benchmark command. `libcst` is intentionally not a P0 dependency.
+P0 and the scoped P1 tooling are implemented. P1 includes pytest/JUnit support,
+tolerances, CSV comparisons, verified fixes, clean-machine profiles, HTML
+reports, and the fixture benchmark command. `libcst` is a P1 runtime dependency,
+not part of the P0 execution path.
