@@ -18,6 +18,12 @@ from .models import ArtifactSpec, RunRequest, RunResult
 from .profiles import CHILD_PROCESS_LIMITATION, build_environment
 
 
+HARNESS_MARKER_LIMITATION = (
+    "The target attempted to read a private CAUSATRACE harness control; marker reads "
+    "are not attribution evidence."
+)
+
+
 class SubprocessRunner:
     """Run a Python target in a mandatory temporary copy.
 
@@ -60,14 +66,49 @@ class SubprocessRunner:
         if not path.is_file():
             return ()
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            raw = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
             return ()
+        # New shims append JSONL records.  Keep accepting the former JSON-list
+        # shape so traces written by an older shim remain readable.
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            data = None
         if isinstance(data, list):
             return tuple(item for item in data if isinstance(item, dict))
         if isinstance(data, dict) and isinstance(data.get("events"), list):
             return tuple(item for item in data["events"] if isinstance(item, dict))
-        return ()
+        records: list[dict] = []
+        for line in raw.splitlines():
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(item, dict):
+                records.append(item)
+        return tuple(records)
+
+    @staticmethod
+    def _normalise_stream(
+        value: bytes | str,
+        *,
+        copy_root: Path,
+        project_root: Path,
+    ) -> bytes | str:
+        """Replace the per-run copy root with the stable logical root.
+
+        Python exposes both ``__file__`` and ``cwd`` to a target.  The runner
+        still executes from an isolated copy, but those paths are harness
+        implementation details and must not make otherwise stable output vary
+        across baseline trials.
+        """
+
+        source = str(copy_root)
+        destination = str(project_root)
+        if isinstance(value, bytes):
+            return value.replace(os.fsencode(source), os.fsencode(destination))
+        return value.replace(source, destination)
 
     @staticmethod
     def _remap_event_paths(
@@ -157,7 +198,6 @@ class SubprocessRunner:
             event_path = Path(temporary) / "events.json"
 
             environment = build_environment(request.profile, base=self.base_environment)
-            environment["CAUSATRACE_EVENT_PATH"] = str(event_path)
             # The shim is imported from this checkout/environment rather than
             # copied into the target project.  Keep an existing PYTHONPATH so
             # project-local imports remain available as well.
@@ -213,8 +253,8 @@ class SubprocessRunner:
             duration = time.monotonic() - start
 
             captured = capture_output(
-                stdout,
-                stderr,
+                self._normalise_stream(stdout, copy_root=copy_root, project_root=project_root),
+                self._normalise_stream(stderr, copy_root=copy_root, project_root=project_root),
                 artifact_specs=copied_specs,
                 artifact_root=copy_root,
                 metric_patterns=request.metric_patterns,
@@ -237,14 +277,16 @@ class SubprocessRunner:
                         suffix += 1
                     display_key = f"{display_key}_{suffix}"
                 metrics[display_key] = value
-            events = self._event_data(event_path) if request.trace else ()
+            recorded_events = self._event_data(event_path)
+            events = recorded_events if request.trace else ()
             events = self._remap_event_paths(events, copy_root, project_root)
             limitations = (CHILD_PROCESS_LIMITATION,)
+            if any(
+                event.get("operation") == "harness.marker_read" for event in recorded_events
+            ):
+                limitations = (*limitations, HARNESS_MARKER_LIMITATION)
             if not request.trace:
-                limitations = (
-                    CHILD_PROCESS_LIMITATION,
-                    "Runtime event tracing was disabled for this request.",
-                )
+                limitations = (*limitations, "Runtime event tracing was disabled for this request.")
             return RunResult(
                 command=command,
                 exit_code=None if timed_out else exit_code,
@@ -280,6 +322,7 @@ run_script = run
 
 __all__ = [
     "CHILD_PROCESS_LIMITATION",
+    "HARNESS_MARKER_LIMITATION",
     "DefaultRunner",
     "ProcessRunner",
     "Runner",

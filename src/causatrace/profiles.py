@@ -14,6 +14,20 @@ CHILD_PROCESS_LIMITATION = (
     "Child-process tracing is not supported; runtime events cover the top-level process only."
 )
 
+# These names are the runner/shim control plane.  They are deliberately kept
+# separate from arbitrary application configuration such as
+# ``CAUSATRACE_FIXTURE_VALUE``: only values owned by the harness are private to
+# the harness.
+HARNESS_ENV_NAMES = frozenset(
+    {
+        "CAUSATRACE_EVENT_PATH",
+        "CAUSATRACE_PYTHON_RANDOM_SEED",
+        "CAUSATRACE_NUMPY_SEED",
+        "CAUSATRACE_LISTING_SEED",
+        "CAUSATRACE_TIMEZONE",
+    }
+)
+
 
 def build_environment(
     profile: ExecutionProfile,
@@ -41,6 +55,12 @@ def build_environment(
             "PYTHONIOENCODING": "utf-8",
         }
     environment.update({str(key): str(value) for key, value in profile.environment.items()})
+
+    # A caller cannot smuggle a harness control into the target as an ordinary
+    # application input.  Typed profile fields below are the only way to set
+    # these values, and the shim removes them before target code starts.
+    for name in HARNESS_ENV_NAMES:
+        environment.pop(name, None)
 
     if profile.python_random_seed is not None:
         environment["CAUSATRACE_PYTHON_RANDOM_SEED"] = str(profile.python_random_seed)
@@ -265,6 +285,7 @@ released_profile = all_released_profile
 
 __all__ = [
     "CHILD_PROCESS_LIMITATION",
+    "HARNESS_ENV_NAMES",
     "FilesystemListingFactor",
     "FilesystemListingFactorProbe",
     "HashSeedFactor",

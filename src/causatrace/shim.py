@@ -8,9 +8,11 @@ by the target; the runner reports that boundary as a limitation.
 from __future__ import annotations
 
 import argparse
+from collections.abc import MutableMapping
 import inspect
 import json
 import locale
+import math
 import os
 from pathlib import Path
 import random
@@ -20,53 +22,146 @@ import sysconfig
 import threading
 import time
 from collections.abc import Iterator
+from functools import wraps
 from typing import Any, Callable, TypeVar
+
+from .profiles import HARNESS_ENV_NAMES
 
 
 CHILD_PROCESS_LIMITATION = (
     "Child-process tracing is not supported; runtime events cover the top-level process only."
 )
 _T = TypeVar("_T", bound=Callable[..., Any])
+_MAX_STACK_FRAMES = 8
+_MAX_EVENTS = 4096
+_MAX_SAFE_DEPTH = 4
+_MAX_SAFE_ITEMS = 64
+_MAX_SAFE_STRING = 4096
+
+
+def _json_safe(value: Any, *, depth: int = 0) -> Any:
+    """Convert an arbitrary event detail into bounded JSON data."""
+
+    if value is None or isinstance(value, (bool, int, str)):
+        if isinstance(value, str) and len(value) > _MAX_SAFE_STRING:
+            return value[:_MAX_SAFE_STRING] + "..."
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else repr(value)
+    if depth >= _MAX_SAFE_DEPTH:
+        try:
+            return str(value)[:_MAX_SAFE_STRING]
+        except Exception:
+            return f"<{type(value).__name__}>"
+    if isinstance(value, bytes):
+        encoded = value.hex()
+        return encoded[:_MAX_SAFE_STRING] + ("..." if len(encoded) > _MAX_SAFE_STRING else "")
+    if isinstance(value, dict):
+        return {
+            str(key): _json_safe(child, depth=depth + 1)
+            for index, (key, child) in enumerate(value.items())
+            if index < _MAX_SAFE_ITEMS
+        }
+    if isinstance(value, (list, tuple, set, frozenset)):
+        values = list(value)
+        result = [_json_safe(child, depth=depth + 1) for child in values[:_MAX_SAFE_ITEMS]]
+        if len(values) > _MAX_SAFE_ITEMS:
+            result.append(f"<{len(values) - _MAX_SAFE_ITEMS} items omitted>")
+        return result
+    try:
+        return str(value)[:_MAX_SAFE_STRING]
+    except Exception:
+        return f"<{type(value).__name__}>"
 
 
 class EventRecorder:
-    """Small JSON-lines-independent event sink for a single top-level process.
+    """Bounded append-only JSONL event sink for one top-level process.
 
-    The file contains a JSON list so the runner can consume it atomically at
-    the end of a run.  Rewriting the short list per event makes events useful
-    even if the target exits through an unhandled exception.
+    Appending one bounded JSON object per event avoids rewriting all prior
+    events.  Each record is flushed immediately so a timeout or an unhandled
+    target exception still leaves the prefix of the trace readable.
     """
 
-    def __init__(self, path: str | Path | None) -> None:
+    def __init__(self, path: str | Path | None, *, max_events: int = _MAX_EVENTS) -> None:
         self.path = Path(path) if path else None
         self.events: list[dict[str, Any]] = []
+        self.max_events = max(1, int(max_events))
+        self._dropped_events = 0
+        self._truncation_written = False
         self._lock = threading.Lock()
+        self._stream = None
         if self.path:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            self._flush()
+            self._stream = self.path.open("w", encoding="utf-8")
 
-    def _location(self) -> tuple[str | None, int | None, str]:
-        frame = inspect.currentframe()
+    def close(self) -> None:
+        with self._lock:
+            if self._stream is None:
+                return
+            if self._dropped_events and not self._truncation_written:
+                self._append_unlocked(
+                    {
+                        "operation": "runtime.events_truncated",
+                        "kind": "unknown",
+                        "path": None,
+                        "line": None,
+                        "stack": [],
+                        "dropped": self._dropped_events,
+                    }
+                )
+                self._truncation_written = True
+            self._flush()
+            self._stream.close()
+            self._stream = None
+
+    def __enter__(self) -> "EventRecorder":
+        return self
+
+    def __exit__(self, *_args: Any) -> None:
+        self.close()
+
+    @property
+    def dropped_events(self) -> int:
+        return self._dropped_events
+
+    def _is_stdlib(self, path: str) -> bool:
         stdlib_root = Path(sysconfig.get_paths().get("stdlib", "")).resolve()
         try:
+            return Path(path).resolve().is_relative_to(stdlib_root)
+        except (OSError, ValueError):
+            return False
+
+    def _stack(self) -> list[dict[str, Any]]:
+        """Return a small, serializable stack of user Python frames."""
+
+        stack: list[dict[str, Any]] = []
+        frame = inspect.currentframe()
+        shim_path = Path(__file__).resolve()
+        try:
             frame = frame.f_back if frame else None
-            while frame is not None:
+            while frame is not None and len(stack) < _MAX_STACK_FRAMES:
                 path = str(frame.f_code.co_filename)
-                if path.startswith("<") or Path(path).resolve() == Path(__file__).resolve():
-                    frame = frame.f_back
-                    continue
                 try:
-                    is_stdlib = Path(path).resolve().is_relative_to(stdlib_root)
+                    internal = Path(path).resolve() == shim_path
                 except (OSError, ValueError):
-                    is_stdlib = False
-                if is_stdlib:
-                    frame = frame.f_back
-                    continue
-                return path, frame.f_lineno, "user"
+                    internal = False
+                if not path.startswith("<") and not internal and not self._is_stdlib(path):
+                    stack.append(
+                        {
+                            "path": path,
+                            "line": frame.f_lineno,
+                            "function": frame.f_code.co_name,
+                        }
+                    )
                 frame = frame.f_back
         finally:
-            # Break reference cycles created by frame walking.
             del frame
+        return stack
+
+    def _location(self) -> tuple[str | None, int | None, str]:
+        stack = self._stack()
+        if stack:
+            return stack[0]["path"], stack[0]["line"], "user"
         return None, None, "unknown"
 
     def record(self, operation: str, **details: Any) -> None:
@@ -77,17 +172,113 @@ class EventRecorder:
             "path": path,
             "line": line,
         }
-        event.update(details)
+        event.update({str(key): _json_safe(value) for key, value in details.items()})
+        # ``stack`` is reserved evidence owned by the recorder, even if a
+        # future hook happens to pass a conflicting detail name.
+        event["stack"] = self._stack()
+        event = _json_safe(event)
         with self._lock:
-            self.events.append(event)
+            # Reserve one slot for a truncation marker so consumers can tell
+            # a complete trace from a capped one.
+            if len(self.events) >= max(0, self.max_events - 1):
+                self._dropped_events += 1
+                return
+            self._append_unlocked(event)
+
+    def _append_unlocked(self, event: dict[str, Any]) -> None:
+        self.events.append(event)
+        if self._stream is not None:
+            self._stream.write(json.dumps(event, sort_keys=True, allow_nan=False) + "\n")
             self._flush()
 
     def _flush(self) -> None:
-        if not self.path:
+        if self._stream is None:
             return
-        temporary = self.path.with_suffix(self.path.suffix + ".tmp")
-        temporary.write_text(json.dumps(self.events, sort_keys=True), encoding="utf-8")
-        temporary.replace(self.path)
+        self._stream.flush()
+
+
+class _ScrubbedEnvironment(MutableMapping[str, str]):
+    """Environment proxy that hides harness controls and reports access."""
+
+    def __init__(self, backing: MutableMapping[str, str], recorder: EventRecorder) -> None:
+        self._backing = backing
+        self._recorder = recorder
+
+    @staticmethod
+    def _name(key: object) -> str | None:
+        if isinstance(key, bytes):
+            try:
+                return os.fsdecode(key)
+            except (UnicodeDecodeError, ValueError):
+                return None
+        return key if isinstance(key, str) else None
+
+    def _marker(self, key: object, access: str) -> bool:
+        name = self._name(key)
+        if name not in HARNESS_ENV_NAMES:
+            return False
+        self._recorder.record("harness.marker_read", name=name, access=access)
+        return True
+
+    def __getitem__(self, key: str) -> str:
+        if self._marker(key, "getitem"):
+            raise KeyError(key)
+        return self._backing[key]
+
+    def __setitem__(self, key: str, value: str) -> None:
+        if self._marker(key, "setitem"):
+            return
+        self._backing[key] = value
+
+    def __delitem__(self, key: str) -> None:
+        if self._marker(key, "delitem"):
+            return
+        del self._backing[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return (key for key in self._backing if key not in HARNESS_ENV_NAMES)
+
+    def __len__(self) -> int:
+        return sum(1 for _ in self)
+
+    def __repr__(self) -> str:
+        return repr(dict(self))
+
+    def copy(self) -> dict[str, str]:
+        return dict(self)
+
+    def __contains__(self, key: object) -> bool:
+        if self._marker(key, "contains"):
+            return False
+        return key in self._backing
+
+    def get(self, key: str, default: Any = None) -> Any:
+        if self._marker(key, "get"):
+            return default
+        return self._backing.get(key, default)
+
+
+def _scrub_harness_environment(recorder: EventRecorder) -> None:
+    """Remove controls from the process environment before target code runs."""
+
+    backing = os.environ
+    for name in HARNESS_ENV_NAMES:
+        try:
+            del backing[name]
+        except KeyError:
+            pass
+    os.environ = _ScrubbedEnvironment(backing, recorder)  # type: ignore[assignment]
+
+    # ``os.getenvb`` consults this separate mapping on POSIX.  Keep the same
+    # private-channel guarantee for byte-key callers.
+    environb = getattr(os, "environb", None)
+    if environb is not None:
+        for name in HARNESS_ENV_NAMES:
+            try:
+                del environb[os.fsencode(name)]
+            except KeyError:
+                pass
+        os.environb = _ScrubbedEnvironment(environb, recorder)  # type: ignore[assignment]
 
 
 def _int_environment(name: str) -> int | None:
@@ -194,16 +385,22 @@ def _install_numpy_hooks(recorder: EventRecorder, seed: int | None) -> None:
 
     original_default_rng = getattr(np.random, "default_rng", None)
     if original_default_rng is not None:
-        def default_rng(seed_value: Any = None) -> Any:
+        @wraps(original_default_rng)
+        def default_rng(*args: Any, **kwargs: Any) -> Any:
+            explicit_seed = args[0] if args else kwargs.get("seed")
+            has_explicit_seed = bool(args) or "seed" in kwargs
+            controlled = not has_explicit_seed and seed is not None
             recorder.record(
                 "numpy.random.default_rng",
-                seed=seed_value if seed_value is not None else seed,
-                controlled=seed_value is None and seed is not None,
+                seed=explicit_seed if has_explicit_seed else seed,
+                controlled=controlled,
                 symbol="numpy.random.default_rng",
             )
-            if seed_value is None and seed is not None:
+            if controlled:
                 return original_default_rng(seed)
-            return original_default_rng(seed_value)
+            # Preserve the original call exactly, including keyword-only
+            # forms such as ``default_rng(seed=17)`` and future arguments.
+            return original_default_rng(*args, **kwargs)
 
         setattr(default_rng, "__causatrace_wrapped__", True)
         setattr(default_rng, "__causatrace_original__", original_default_rng)
@@ -324,31 +521,38 @@ def run_target(
 
     target_path = Path(target).resolve()
     recorder = EventRecorder(events_path)
-    _install_hooks(recorder)
-    recorder.record(
-        "process.start",
-        target=str(target_path),
-        child_process_tracing=False,
-        limitation=CHILD_PROCESS_LIMITATION,
-    )
-
-    # Match ``python script.py args`` semantics: the script directory is the
-    # first import location and argv[0] is the target path.
-    target_directory = str(target_path.parent)
-    if not sys.path or sys.path[0] != target_directory:
-        sys.path.insert(0, target_directory)
-    sys.argv = [str(target_path), *[str(argument) for argument in arguments]]
     try:
-        runpy.run_path(str(target_path), run_name="__main__")
-    except SystemExit as exc:
-        code = exc.code
-        if code is None:
-            return 0
-        if isinstance(code, int):
-            return code
-        print(code, file=sys.stderr)
-        return 1
-    return 0
+        _install_hooks(recorder)
+        # The shim consumes all harness controls before target code starts.
+        # Remaining reads are reported by the proxy rather than exposing the
+        # control values as ordinary application inputs.
+        _scrub_harness_environment(recorder)
+        recorder.record(
+            "process.start",
+            target=str(target_path),
+            child_process_tracing=False,
+            limitation=CHILD_PROCESS_LIMITATION,
+        )
+
+        # Match ``python script.py args`` semantics: the script directory is
+        # the first import location and argv[0] is the target path.
+        target_directory = str(target_path.parent)
+        if not sys.path or sys.path[0] != target_directory:
+            sys.path.insert(0, target_directory)
+        sys.argv = [str(target_path), *[str(argument) for argument in arguments]]
+        try:
+            runpy.run_path(str(target_path), run_name="__main__")
+        except SystemExit as exc:
+            code = exc.code
+            if code is None:
+                return 0
+            if isinstance(code, int):
+                return code
+            print(code, file=sys.stderr)
+            return 1
+        return 0
+    finally:
+        recorder.close()
 
 
 def build_parser() -> argparse.ArgumentParser:
