@@ -17,6 +17,7 @@ from .models import (
     ExecutionProfile,
     Location,
     ProbeResult,
+    RunEvidence,
     RunResult,
     StaticFinding,
 )
@@ -33,6 +34,15 @@ _BASELINE_LIMITATION = (
 )
 _PAIRING_LIMITATION = "Paired baseline and treatment trial counts do not match."
 _FAILED_RUN_LIMITATION = "At least one paired run failed or timed out; attribution is inconclusive."
+_FAILED_TREATMENT_LIMITATION = (
+    "At least one treatment run failed or timed out; factor attribution is inconclusive."
+)
+_TREATMENT_UNSTABLE_LIMITATION = (
+    "Treatment outputs were not stable across trials; the observed effect may be an interaction."
+)
+_PARTIAL_EFFECT_LIMITATION = (
+    "Only some baseline-treatment pairs changed; the factor effect may depend on trial context."
+)
 
 
 def _as_runs(value: RunResult | Iterable[RunResult] | None) -> tuple[RunResult, ...]:
@@ -69,6 +79,28 @@ def baseline_is_stable(
     return all(not comparator.compare(reference, run).changed for run in runs[1:])
 
 
+def treatment_is_stable(
+    treatment_trials: RunResult | Iterable[RunResult],
+    *,
+    comparator: ExactComparator | None = None,
+) -> bool:
+    """Return whether every successful treatment trial has the same evidence.
+
+    Treatment stability is checked independently of the baseline so a factor
+    cannot be supported merely because each changing treatment happened to
+    differ from control in a different way.
+    """
+
+    runs = _as_runs(treatment_trials)
+    if not runs or not all(_run_succeeded(run) for run in runs):
+        return False
+    if len(runs) == 1:
+        return True
+    comparator = comparator or ExactComparator()
+    reference = runs[0]
+    return all(not comparator.compare(reference, run).changed for run in runs[1:])
+
+
 def _baseline_repeat_is_stable(
     baseline: RunResult | None,
     baseline_repeat: RunResult | None,
@@ -86,6 +118,24 @@ def _aggregate_limitations(values: Iterable[str]) -> tuple[str, ...]:
     return tuple(sorted(set(value for value in values if value)))
 
 
+def _evidence_trials(
+    runs: Iterable[RunResult],
+    *,
+    fallback_profile: str,
+) -> tuple[RunEvidence, ...]:
+    return tuple(
+        RunEvidence.from_run(
+            run,
+            profile=(
+                run.profile
+                if run.profile and run.profile != "unknown"
+                else fallback_profile
+            ),
+        )
+        for run in runs
+    )
+
+
 def attribute_factor(
     factor: str,
     baseline_trials: RunResult | Iterable[RunResult],
@@ -95,12 +145,15 @@ def attribute_factor(
     locations: Sequence[Location] = (),
     limitations: Sequence[str] = (),
     comparator: ExactComparator | None = None,
+    baseline_profile: str = "baseline",
+    treatment_profile: str | None = None,
 ) -> ProbeResult:
     """Classify a factor from paired baseline/treatment runs.
 
     P0 semantics are deliberately exact and simple:
 
-    * every paired treatment change => ``factor_supported``;
+    * every paired treatment change plus stable successful treatment trials =>
+      ``factor_supported``;
     * no paired treatment changes => ``factor_not_observed``;
     * a mix of changed and unchanged pairs => ``interaction_suspected``;
     * missing/mismatched pairs or failed runs => ``inconclusive``.
@@ -116,6 +169,17 @@ def attribute_factor(
     trial_count = len(treatments)
     treatment_name = treatment or factor
     base_limitations = list(limitations)
+    treatment_profile_name = treatment_profile or treatment_name
+    evidence = {
+        "baseline_trials": _evidence_trials(
+            baselines,
+            fallback_profile=baseline_profile,
+        ),
+        "treatment_trials": _evidence_trials(
+            treatments,
+            fallback_profile=treatment_profile_name,
+        ),
+    }
 
     if not baselines or not treatments:
         base_limitations.append("At least one baseline and one treatment trial are required.")
@@ -129,6 +193,7 @@ def attribute_factor(
             locations=tuple(locations),
             classification=INCONCLUSIVE,
             limitations=_aggregate_limitations(base_limitations),
+            **evidence,
         )
 
     if len(baselines) == 1:
@@ -147,6 +212,7 @@ def attribute_factor(
             locations=tuple(locations),
             classification=INCONCLUSIVE,
             limitations=_aggregate_limitations(base_limitations),
+            **evidence,
         )
 
     if not baseline_is_stable(baselines, comparator=comparator):
@@ -161,6 +227,7 @@ def attribute_factor(
             locations=tuple(locations),
             classification=INCONCLUSIVE,
             limitations=_aggregate_limitations(base_limitations),
+            **evidence,
         )
 
     comparisons = tuple(
@@ -169,11 +236,16 @@ def attribute_factor(
     )
     changed_trials = sum(comparison.changed for comparison in comparisons)
     consistency = changed_trials / trial_count if trial_count else 0.0
-    failed = any(not _run_succeeded(run) for run in (*paired_baselines, *treatments))
-    if failed:
-        base_limitations.append(_FAILED_RUN_LIMITATION)
+    failed_baseline = any(not _run_succeeded(run) for run in paired_baselines)
+    failed_treatment = any(not _run_succeeded(run) for run in treatments)
+    treatment_stable = treatment_is_stable(treatments, comparator=comparator)
+    if failed_baseline or failed_treatment:
+        if failed_treatment:
+            base_limitations.append(_FAILED_TREATMENT_LIMITATION)
+        if failed_baseline:
+            base_limitations.append(_FAILED_RUN_LIMITATION)
         classification = INCONCLUSIVE
-    elif changed_trials == trial_count:
+    elif changed_trials == trial_count and treatment_stable:
         classification = FACTOR_SUPPORTED
     elif changed_trials == 0:
         classification = FACTOR_NOT_OBSERVED
@@ -181,6 +253,13 @@ def attribute_factor(
         # A repeatable baseline plus a mixed treatment response is evidence of
         # a context-dependent effect, not proof of a universal factor effect.
         classification = INTERACTION_SUSPECTED
+        if not treatment_stable:
+            base_limitations.append(_TREATMENT_UNSTABLE_LIMITATION)
+        if changed_trials != trial_count:
+            base_limitations.append(_PARTIAL_EFFECT_LIMITATION)
+
+    if not treatment_stable and not failed_treatment:
+        base_limitations.append(_TREATMENT_UNSTABLE_LIMITATION)
 
     return ProbeResult(
         factor=factor,
@@ -192,6 +271,7 @@ def attribute_factor(
         locations=tuple(locations),
         classification=classification,
         limitations=_aggregate_limitations(base_limitations),
+        **evidence,
     )
 
 
@@ -369,4 +449,5 @@ __all__ = [
     "build_analysis_report",
     "classify_factor",
     "paired_trial_consistency",
+    "treatment_is_stable",
 ]

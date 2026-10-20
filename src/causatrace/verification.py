@@ -70,6 +70,8 @@ def _run_hash_is_exact(runs: tuple[RunResult, ...]) -> bool:
     if len({run.stderr_hash for run in runs}) != 1:
         return False
     artifact_hashes = {tuple(sorted(run.artifacts.items())) for run in runs}
+    if any(run.missing_artifacts for run in runs):
+        return False
     return len(artifact_hashes) == 1
 
 
@@ -81,13 +83,14 @@ def verify_five_runs(
 ) -> VerificationResult:
     """Run one request five times and require exact hash equality.
 
-    ``profile`` defaults to the existing pinned baseline profile.  Pass
-    :func:`clean_machine_profile` explicitly to verify a repair without P0's
-    random/listing injections.  The request is copied with the selected
+    ``profile`` defaults to the unmasked clean-machine profile.  Pass
+    :func:`baseline_profile` explicitly when you need to verify the harness's
+    controlled baseline; the default must not hide the nondeterminism being
+    tested. The request is copied with the selected
     profile; the caller's object is never mutated.
     """
 
-    selected_profile = profile or baseline_profile()
+    selected_profile = profile or clean_machine_profile()
     selected_runner = runner or SubprocessRunner()
     run_request = replace(request, profile=selected_profile)
     runs = tuple(selected_runner.run(run_request) for _ in range(5))
@@ -102,6 +105,9 @@ def verify_five_runs(
         warnings.append("Verification stderr SHA-256 hashes differ across the five runs.")
     if len({tuple(sorted(run.artifacts.items())) for run in runs}) > 1:
         warnings.append("Verification artifact SHA-256 hashes differ across the five runs.")
+    missing = sorted({path for run in runs for path in run.missing_artifacts})
+    if missing:
+        warnings.append("Requested artifacts were missing: " + ", ".join(missing))
     limitations = tuple(sorted({item for run in runs for item in run.limitations}))
     if CHILD_PROCESS_LIMITATION not in limitations:
         limitations = tuple(sorted((*limitations, CHILD_PROCESS_LIMITATION)))

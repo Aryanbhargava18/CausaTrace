@@ -43,7 +43,7 @@ interactions, and inconclusive experiments.
 uv run --offline causatrace analyze path/to/script.py --project-root .
 uv run --offline causatrace analyze path/to/script.py --format json > report.json
 uv run --offline causatrace analyze path/to/script.py --format html --output report.html
-uv run --offline causatrace verify path/to/script.py --project-root . --clean-machine
+uv run --offline causatrace verify path/to/script.py --project-root .
 uv run --offline causatrace fix path/to/script.py
 uv run --offline causatrace pytest --project-root .
 uv run --offline causatrace benchmark --project-root .
@@ -53,6 +53,12 @@ Optional artifact hashes and numeric stream metrics can be requested with
 `--artifact PATH` and repeated `--metric-regex REGEX` options. P0 uses exact
 SHA-256 output comparisons; numeric tolerances, CSV row diffs, pytest/JUnit
 results, verified codemods, and HTML reports are P1 work.
+
+Pass script arguments after `--`:
+
+```bash
+uv run --offline causatrace analyze path/to/script.py --project-root . -- input.csv
+```
 
 The supported P0 interventions are:
 
@@ -83,7 +89,8 @@ frame is in the target project.
 - P0 repair output is plain-text guidance and diff-like suggestions only. P1
   adds a small LibCST-backed codemod set. `causatrace fix` is preview-only by
   default; source files are modified only with explicit `--write`.
-- P1 verification requires five successful runs with identical stdout, stderr,
+- Verification defaults to the unmasked clean-machine profile. It requires five
+  successful runs with identical stdout, stderr,
   and artifact hashes. The clean-machine profile uses UTC, C.UTF-8, a different
   hash seed, shuffled listing order, and a minimal declared environment; it
   intentionally does not seed Python or NumPy randomness.

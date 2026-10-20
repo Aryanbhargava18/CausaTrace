@@ -17,3 +17,21 @@ def test_fix_is_preview_only_until_write_is_explicit(tmp_path: Path, capsys) -> 
     assert main(["fix", str(target), "--write"]) == 0
     assert "default_rng(0)" in target.read_text(encoding="utf-8")
     assert "Verification: PASS" in capsys.readouterr().out
+
+
+def test_default_verify_does_not_mask_unseeded_randomness(tmp_path: Path, capsys) -> None:
+    target = tmp_path / "random.py"
+    target.write_text("import random\nprint(random.random())\n", encoding="utf-8")
+
+    assert main(["verify", str(target), "--project-root", str(tmp_path)]) == 1
+    assert "FAIL" in capsys.readouterr().out
+
+
+def test_failed_write_verification_rolls_back_source(tmp_path: Path, capsys) -> None:
+    target = tmp_path / "mixed.py"
+    original = "print(list({1, 'a'}))\n"
+    target.write_text(original, encoding="utf-8")
+
+    assert main(["fix", str(target), "--write"]) == 1
+    assert target.read_text(encoding="utf-8") == original
+    assert "restored" in capsys.readouterr().err

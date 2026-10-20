@@ -263,6 +263,11 @@ class SubprocessRunner:
                 artifact_names.get(path, path): digest
                 for path, digest in captured.artifacts.items()
             }
+            missing_artifacts = tuple(
+                artifact_names.get(spec.path, spec.path)
+                for spec in copied_specs
+                if spec.path not in captured.artifacts
+            )
             metrics: dict[str, float] = {}
             for key, value in captured.metrics.items():
                 display_key = key
@@ -296,6 +301,7 @@ class SubprocessRunner:
                 output_hash=captured.output_hash,
                 stderr_hash=captured.stderr_hash,
                 artifacts=artifacts,
+                missing_artifacts=missing_artifacts,
                 metrics=metrics,
                 trace_events=events,
                 duration_seconds=duration,

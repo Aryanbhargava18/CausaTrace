@@ -47,6 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     fix = commands.add_parser("fix", help="preview safe reproducibility repairs")
     fix.add_argument("target", type=Path)
+    fix.add_argument("--project-root", type=Path)
     fix.add_argument("--write", action="store_true", help="apply the displayed diff")
     fix.add_argument("--verify", action="store_true", help="deprecated; --write verifies automatically")
     fix.add_argument("--clean-machine", action="store_true", help="verify with the clean-machine profile")
@@ -82,7 +83,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    parsed = parser.parse_args(argv)
+    raw_args = list(sys.argv[1:] if argv is None else argv)
+    target_arguments: tuple[str, ...] = ()
+    if "--" in raw_args and "analyze" in raw_args:
+        separator = raw_args.index("--")
+        target_arguments = tuple(raw_args[separator + 1 :])
+        raw_args = raw_args[:separator]
+    parsed = parser.parse_args(raw_args)
     if parsed.command is None:
         parser.print_help()
         return 2
@@ -92,6 +99,7 @@ def main(argv: list[str] | None = None) -> int:
             report = AnalysisOrchestrator().analyze(
                 parsed.target,
                 project_root=parsed.project_root,
+                arguments=target_arguments,
                 artifacts=artifacts,
                 metric_patterns=tuple(parsed.metric_regex),
                 timeout_seconds=parsed.timeout,
@@ -106,7 +114,7 @@ def main(argv: list[str] | None = None) -> int:
                 parsed.output.write_text(output, encoding="utf-8")
             else:
                 print(output, end="")
-            return 0
+            return 1 if report.status in {"baseline_unstable", "inconclusive"} else 0
 
         if parsed.command == "fix":
             source = parsed.target.read_text(encoding="utf-8")
@@ -121,11 +129,18 @@ def main(argv: list[str] | None = None) -> int:
             if not parsed.write:
                 print("Preview only; no files were modified.", file=sys.stderr)
                 return 0
+            original_source = source
             parsed.target.write_text(preview.transformed_source, encoding="utf-8")
             print(f"Wrote {parsed.target}.")
             if parsed.write or parsed.verify:
-                root = parsed.target.resolve().parent
-                request = RunRequest(target=parsed.target.name, project_root=str(root))
+                target = parsed.target.resolve()
+                root = parsed.project_root.resolve() if parsed.project_root else target.parent
+                try:
+                    relative_target = target.relative_to(root)
+                except ValueError as exc:
+                    parsed.target.write_text(original_source, encoding="utf-8")
+                    raise ValueError("target must be inside project-root") from exc
+                request = RunRequest(target=str(relative_target), project_root=str(root))
                 result = verify_five_runs(
                     request,
                     profile=clean_machine_profile() if parsed.clean_machine else None,
@@ -136,6 +151,10 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 for warning in result.warnings:
                     print(f"Warning: {warning}", file=sys.stderr)
+                if not result.verified:
+                    parsed.target.write_text(original_source, encoding="utf-8")
+                    print("Verification failed; restored the original source.", file=sys.stderr)
+                    return 1
             return 0
 
         if parsed.command == "verify":

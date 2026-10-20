@@ -1,5 +1,7 @@
 __agent__/
 .omnirush/
+.opencode/
+research_notes/
 .venv/
 __pycache__/
 *.py[cod]

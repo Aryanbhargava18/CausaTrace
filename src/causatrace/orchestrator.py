@@ -74,7 +74,7 @@ class AnalysisOrchestrator:
         metric_patterns: tuple[str, ...],
         timeout_seconds: float,
     ) -> RunResult:
-        return self.runner.run(
+        result = self.runner.run(
             RunRequest(
                 target=target,
                 arguments=tuple(arguments),
@@ -87,6 +87,11 @@ class AnalysisOrchestrator:
                 temporary_copy=True,
             )
         )
+        # Runner results intentionally remain useful to custom runners that do
+        # not know about report metadata.  Attach the requested profile here so
+        # serialized RunEvidence can identify every trial without including the
+        # full execution profile or environment.
+        return replace(result, profile=profile.name)
 
     @staticmethod
     def _relative_locations(root: Path, locations):

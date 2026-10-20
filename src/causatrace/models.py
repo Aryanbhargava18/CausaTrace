@@ -62,10 +62,70 @@ class RunResult:
     output_hash: str
     stderr_hash: str
     artifacts: Mapping[str, str] = field(default_factory=dict)
+    missing_artifacts: tuple[str, ...] = ()
     metrics: Mapping[str, float] = field(default_factory=dict)
     trace_events: tuple[Mapping[str, Any], ...] = ()
     duration_seconds: float = 0.0
     limitations: tuple[str, ...] = ()
+    profile: str = "unknown"
+
+
+@dataclass(frozen=True)
+class RunEvidence:
+    """Compact, auditable evidence for one execution.
+
+    Reports intentionally carry hashes and parsed metrics rather than captured
+    stdout/stderr.  This keeps the machine-readable evidence useful for
+    auditing a classification without copying secrets or arbitrarily large
+    program output into JSON or HTML.
+    """
+
+    profile: str
+    output_hash: str
+    stderr_hash: str
+    artifacts: Mapping[str, str] = field(default_factory=dict)
+    missing_artifacts: tuple[str, ...] = ()
+    metrics: Mapping[str, float] = field(default_factory=dict)
+    exit_code: int | None = None
+    timed_out: bool = False
+
+    @classmethod
+    def from_run(cls, result: RunResult, *, profile: str | None = None) -> RunEvidence:
+        return cls(
+            profile=profile or result.profile,
+            output_hash=result.output_hash,
+            stderr_hash=result.stderr_hash,
+            artifacts=dict(result.artifacts),
+            missing_artifacts=tuple(result.missing_artifacts),
+            metrics=dict(result.metrics),
+            exit_code=result.exit_code,
+            timed_out=result.timed_out,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return the compact serialized form used by report payloads."""
+
+        return asdict(self)
+
+    @property
+    def profile_name(self) -> str:
+        """Compatibility spelling for callers that use the full field name."""
+
+        return self.profile
+
+    @property
+    def artifact_hashes(self) -> Mapping[str, str]:
+        """Compatibility spelling that makes the digest nature explicit."""
+
+        return self.artifacts
+
+    @property
+    def exit_status(self) -> int | None:
+        return self.exit_code
+
+    @property
+    def timeout(self) -> bool:
+        return self.timed_out
 
 
 @dataclass(frozen=True)
@@ -91,6 +151,8 @@ class ProbeResult:
     locations: tuple[Location, ...] = ()
     classification: str = "inconclusive"
     limitations: tuple[str, ...] = ()
+    baseline_trials: tuple[RunEvidence, ...] = ()
+    treatment_trials: tuple[RunEvidence, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -114,4 +176,46 @@ class AnalysisReport:
     limitations: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        """Return a JSON-safe report without raw process output.
+
+        ``RunResult`` remains available to in-process callers for comparisons
+        and diagnostics, but serialized reports use :class:`RunEvidence` for
+        every baseline and probe trial.
+        """
+
+        return {
+            "schema_version": self.schema_version,
+            "target": self.target,
+            "status": self.status,
+            "baseline": _compact_run(self.baseline, "baseline"),
+            "baseline_repeat": _compact_run(self.baseline_repeat, "baseline"),
+            "baseline_trials": [
+                _compact_run(run, "baseline") for run in self.baseline_trials
+            ],
+            "probes": [_probe_to_dict(probe) for probe in self.probes],
+            "static_findings": [asdict(finding) for finding in self.static_findings],
+            "limitations": list(self.limitations),
+        }
+
+
+def _compact_run(
+    value: RunResult | RunEvidence | None,
+    fallback_profile: str,
+) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if isinstance(value, RunEvidence):
+        return value.to_dict()
+    profile = value.profile if value.profile and value.profile != "unknown" else fallback_profile
+    return RunEvidence.from_run(value, profile=profile).to_dict()
+
+
+def _probe_to_dict(probe: ProbeResult) -> dict[str, Any]:
+    value = asdict(probe)
+    value["baseline_trials"] = [
+        _compact_run(run, "baseline") for run in probe.baseline_trials
+    ]
+    value["treatment_trials"] = [
+        _compact_run(run, probe.treatment or "treatment") for run in probe.treatment_trials
+    ]
+    return value

@@ -11,8 +11,15 @@ from causatrace.attribution import (
     Attributor,
     attribute_factor,
 )
-from causatrace.models import AnalysisReport, Location, OutputComparison, ProbeResult, RunResult, StaticFinding
-from causatrace.reporting import render_json, render_terminal
+from causatrace.models import (
+    AnalysisReport,
+    Location,
+    OutputComparison,
+    ProbeResult,
+    RunResult,
+    StaticFinding,
+)
+from causatrace.reporting import render_html, render_json, render_terminal
 
 
 def result(
@@ -21,6 +28,7 @@ def result(
     metric: float = 1.0,
     artifact: str = "artifact-hash",
     exit_code: int | None = 0,
+    profile: str = "baseline",
 ) -> RunResult:
     return RunResult(
         command=("python", "program.py"),
@@ -32,6 +40,7 @@ def result(
         stderr_hash="stderr",
         artifacts={"result.bin": artifact},
         metrics={"score": metric},
+        profile=profile,
     )
 
 
@@ -53,7 +62,7 @@ def test_comparison_uses_exact_hashes_artifacts_and_metrics() -> None:
 
 def test_paired_trials_classify_supported_not_observed_and_interaction() -> None:
     baseline = [result("same"), result("same"), result("same")]
-    supported = attribute_factor("random", baseline, [result("a"), result("b"), result("c")])
+    supported = attribute_factor("random", baseline, [result("changed")] * 3)
     absent = attribute_factor("random", baseline, baseline)
     mixed = attribute_factor("random", baseline, [result("a"), result("same"), result("c")])
 
@@ -63,6 +72,60 @@ def test_paired_trials_classify_supported_not_observed_and_interaction() -> None
     assert absent.classification == FACTOR_NOT_OBSERVED
     assert mixed.classification == INTERACTION_SUSPECTED
     assert mixed.changed_trials == 2
+
+
+def test_unstable_treatment_cannot_be_factor_supported() -> None:
+    baseline = [result("same")] * 3
+    probe = attribute_factor(
+        "random",
+        baseline,
+        [result("changed-a"), result("changed-b"), result("changed-c")],
+    )
+
+    assert probe.classification == INTERACTION_SUSPECTED
+    assert probe.changed_trials == 3
+    assert "Treatment outputs were not stable" in " ".join(probe.limitations)
+
+
+def test_report_serializes_compact_per_run_evidence_without_raw_output() -> None:
+    secret = "secret output that must not enter the report"
+    baseline_run = result("baseline-hash", profile="baseline")
+    treatment_run = result("treatment-hash", profile="baseline:random:trial-1")
+    baseline_run = RunResult(
+        **{
+            **baseline_run.__dict__,
+            "stdout": secret,
+        }
+    )
+    probe = attribute_factor("random", [baseline_run], [treatment_run])
+    report = AnalysisReport(
+        schema_version="1.0",
+        target="program.py",
+        status="stable_baseline",
+        baseline=baseline_run,
+        baseline_trials=(baseline_run,),
+        probes=(probe,),
+    )
+
+    rendered = render_json(report)
+    payload = json.loads(rendered)
+    evidence = payload["probes"][0]["treatment_trials"][0]
+
+    assert evidence == {
+        "artifacts": {"result.bin": "artifact-hash"},
+        "exit_code": 0,
+        "missing_artifacts": [],
+        "metrics": {"score": 1.0},
+        "output_hash": "treatment-hash",
+        "profile": "baseline:random:trial-1",
+        "stderr_hash": "stderr",
+        "timed_out": False,
+    }
+    assert payload["baseline"]["profile"] == "baseline"
+    assert "stdout" not in payload["baseline"]
+    assert "stderr" not in payload["baseline"]
+    assert secret not in rendered
+    assert "output_hash" in render_html(report)
 
 
 def test_unstable_baseline_protects_probe_and_report_status() -> None:
