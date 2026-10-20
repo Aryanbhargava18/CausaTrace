@@ -36,6 +36,18 @@ The project does not claim universal causal inference. It claims a narrower,
 testable result: changing factor **F** under a declared protocol repeatedly
 changed output **O**, with the effect and limitations recorded in the report.
 
+### Buildathon positioning
+
+The strongest public buildathon-adjacent projects we reviewed solve nearby but
+different problems: [Flaky Tests Hunter](https://github.com/hanabif/Omnirush-Flaky-test-hunter)
+repeats tests in Docker and classifies flakiness; [OmniResilience](https://github.com/potlasrisharan/ominirush-Immune)
+breaks and heals a vulnerable service; [FaultLine](https://github.com/Khu885/FaultLine)
+arbitrates AI repair patches; and [Repro Doctor](https://github.com/Xombi17/repro-doctor)
+repairs reproducibility artifacts. CausaTrace occupies the narrower research
+gap between them: it performs controlled runtime interventions to identify a
+tested hidden factor before proposing a repair. Its claim is intentionally
+smaller, more falsifiable, and easier to audit.
+
 ## 30-second evaluator demo
 
 From a clean checkout:
@@ -184,6 +196,14 @@ CausaTrace treats reproducibility debugging as a controlled experiment:
 It is deliberately an offline Python CLI rather than a cloud service, making
 the result inspectable, reproducible, and usable in restricted research
 environments.
+
+## Built with OmniRush
+
+OmniRush was used during development for parallel role-based implementation and
+adversarial review: runner/shim, locator/static rules, attribution/reporting,
+fixtures/tests, and red-team evaluation were developed and checked as separate
+workstreams. The shipped product intentionally has no runtime LLM, API key, or
+network dependency, so an evaluator can reproduce the evidence locally.
 
 ## Scope and honest limitations
 

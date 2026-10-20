@@ -48,6 +48,18 @@ def run_demo(project_root: str | Path) -> int:
     print("=" * 28)
     print("1. Controlled causal intervention")
     print(render_terminal(causal_report), end="")
+    if supported:
+        proof = supported[0]
+        baseline_hashes = [run.output_hash[:12] for run in proof.baseline_trials]
+        treatment_hashes = [run.output_hash[:12] for run in proof.treatment_trials]
+        print("Audit trail:")
+        print(f"- treatment profile: {proof.treatment}")
+        print(f"- baseline trial hashes: {', '.join(baseline_hashes)}")
+        print(f"- treatment trial hashes: {', '.join(treatment_hashes)}")
+        print(
+            f"- treatment stability: "
+            f"{'PASS' if len(set(treatment_hashes)) == 1 else 'FAIL'}"
+        )
     print("2. Verification guardrails")
     print(
         f"- clean control: {'PASS' if clean_verification.verified else 'FAIL'} "
