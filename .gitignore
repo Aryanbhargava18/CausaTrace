@@ -2,6 +2,9 @@ __agent__/
 .omnirush/
 .opencode/
 research_notes/
+.env
+.env.*
+!.env.example
 .venv/
 __pycache__/
 *.py[cod]

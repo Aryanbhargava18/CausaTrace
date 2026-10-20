@@ -67,12 +67,12 @@ def test_runtime_locator_prefers_project_frame_and_classifies_other_frames(
         (
             {
                 "operation": "random.random",
-                "path": "/opt/venv/lib/python3.12/site-packages/pkg.py",
+                "path": "../venv/lib/python3.12/site-packages/pkg.py",
                 "line": 8,
                 "kind": "dependency",
                 "frames": [
                     {
-                        "path": "/opt/venv/lib/python3.12/site-packages/pkg.py",
+                        "path": "../venv/lib/python3.12/site-packages/pkg.py",
                         "line": 8,
                         "kind": "dependency",
                     },
@@ -81,13 +81,13 @@ def test_runtime_locator_prefers_project_frame_and_classifies_other_frames(
             },
             {
                 "operation": "time.localtime",
-                "path": "/usr/local/lib/python3.12/time.py",
+                "path": "../stdlib/lib/python3.12/time.py",
                 "line": 12,
                 "kind": "stdlib",
             },
             {
                 "operation": "package.call",
-                "path": "/opt/venv/lib/python3.12/site-packages/pkg.py",
+                "path": "../venv/lib/python3.12/site-packages/pkg.py",
                 "line": 21,
                 "kind": "dependency",
             },
@@ -102,8 +102,8 @@ def test_runtime_locator_prefers_project_frame_and_classifies_other_frames(
 
     assert [(location.kind, location.path, location.line) for location in locations] == [
         ("runtime_user", str(user_file), 4),
-        ("runtime_stdlib", "/usr/local/lib/python3.12/time.py", 12),
-        ("runtime_dependency", "/opt/venv/lib/python3.12/site-packages/pkg.py", 21),
+        ("runtime_stdlib", "../stdlib/lib/python3.12/time.py", 12),
+        ("runtime_dependency", "../venv/lib/python3.12/site-packages/pkg.py", 21),
         ("static_rule", str(user_file), 1),
     ]
     assert locations[0].confidence == "runtime"

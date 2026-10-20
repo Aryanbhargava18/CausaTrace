@@ -80,6 +80,12 @@ make test
 make demo
 ```
 
+### Configuration and secrets
+
+CausaTrace requires no API keys or runtime secrets. `.env.example` is included
+as the safe configuration template; it intentionally contains comments only.
+Real `.env` files are ignored by Git.
+
 Analyze a script:
 
 ```bash
